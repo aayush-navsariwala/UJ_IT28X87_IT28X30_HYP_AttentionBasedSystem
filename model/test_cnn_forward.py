@@ -12,4 +12,3 @@ output = cnn.forward(test_image)
 
 # Returns the probability for the attentive class
 print("Prediction (probability):", output)
-

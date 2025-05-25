@@ -91,6 +91,3 @@ class SimpleCNN:
         # Predicts the binary class for a given image
         output = self.forward(X)
         return 1 if output > 0.5 else 0
-    
-    
-    
