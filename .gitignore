@@ -1,0 +1,6 @@
+# Ignore all large and binary files for commits
+data/processed/*
+data/npy/*
+*.npy
+*.jpg
+*.png
