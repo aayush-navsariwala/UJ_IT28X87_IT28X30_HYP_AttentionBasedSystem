@@ -27,9 +27,7 @@ def train_one_sample(x, y_true):
     loss = binary_cross_entropy(y_true, y_pred)
     
     # Get derivative of loss w.r.t model output
-    dL_dy = binary_cross_entropy_derivative(y_true, y_pred)
-    
-    # Add backpropagation and gradient update here
+    model.backward(y_true, learning_rate)
     
     return loss, y_pred
 

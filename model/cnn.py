@@ -26,7 +26,7 @@ def binary_cross_entropy(y_true, y_pred):
 # Derivative of binary cross enthropy loss
 def binary_cross_entropy_derivative(y_true, y_pred):
     eps = 1e-8
-    return (-(y_true / (y_pred + eps)) + ((1 - y_true) / (1 - y_pred + eps))) / len(y_true)
+    return (-(y_true / (y_pred + eps)) + ((1 - y_true) / (1 - y_pred + eps)))
 
 # Converts image to column matrix to simplify convolution as a matrix multiplication and assumes single channel image
 def im2col(image, kernel_size=3, stride=1):
@@ -65,12 +65,16 @@ class SimpleCNN:
         
     def forward(self, X):
         # Convolution by applying 3x3 filter across input image
-        self.cols, h, w = im2col(X, 3)
-        conv_out = np.dot(self.conv1_filter.flatten(), self.cols) + self.conv1_bias
-        conv_out = conv_out.reshape(h, w)
+        self.cols = []
+        for i in range(46):
+            for j in range(46):
+                patch = X[i:i+3, j:j+3]
+                val = np.sum(self.conv1_filter * patch) + self.conv1_bias
+                self.cols.append(val)
+        conv_output = np.array(self.cols).reshape(46, 46)
         
         # Activation of ReLu
-        self.relu1 = relu(conv_out)
+        self.relu1 = relu(conv_output)
         
         # Max pooling using 2x2 with stride 2 by manually downsampling by slicing
         pooled = self.relu1[::2, ::2]
@@ -79,15 +83,49 @@ class SimpleCNN:
         self.flatten = pooled.flatten().reshape(1, -1)
         
         # Fully connected layer with FC -> ReLu
-        self.fc_out = relu(np.dot(self.flatten, self.fc_weights) + self.fc_bias)
+        self.fc_input = self.flatten
+        self.fc_z = np.dot(self.fc_input, self.fc_weights) + self.fc_bias
+        self.fc_a = relu(self.fc_z)
         
         # Output layer with FC -> sigmoid for binary output
-        self.output_raw = np.dot(self.fc_out, self.out_weights) + self.out_bias
-        self.output = sigmoid(self.output_raw)
+        self.out_z = np.dot(self.fc_a, self.out_weights) + self.out_bias
+        self.out_a = sigmoid(self.out_z)
         
-        return self.output
+        return self.out_a
+    
+    def backward(self, y_true, learning_rate):
+        m = y_true.shape[0]
+
+        # Output layer
+        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a)
+        dOut_dZ = sigmoid_derivative(self.out_z)
+        dZ = dLoss_dOut * dOut_dZ  # shape: (1, 1)
+
+        dW_out = np.dot(self.fc_a.T, dZ)
+        db_out = np.sum(dZ, axis=0, keepdims=True)
+
+        # Fully connected layer
+        dA_fc = np.dot(dZ, self.out_weights.T)
+        dZ_fc = dA_fc * relu_derivative(self.fc_z)
+
+        dW_fc = np.dot(self.fc_input.T, dZ_fc)
+        db_fc = np.sum(dZ_fc, axis=0, keepdims=True)
+
+        # Gradient descent update
+        self.out_weights -= learning_rate * dW_out
+        self.out_bias -= learning_rate * db_out
+        self.fc_weights -= learning_rate * dW_fc
+        self.fc_bias -= learning_rate * db_fc
     
     def predict(self, X):
         # Predicts the binary class for a given image
         output = self.forward(X)
         return 1 if output > 0.5 else 0
+    
+    def evaluate(self, X, y):
+        correct = 0
+        for i in range(len(X)):
+            pred = self.predict(X[i])
+            if pred == y[i]:
+                correct += 1
+        return correct / len(X)
