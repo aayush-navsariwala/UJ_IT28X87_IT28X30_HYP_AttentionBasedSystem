@@ -6,3 +6,4 @@ data/npy/*
 *.png
 
 data/drivegaze
+data/combined
