@@ -10,26 +10,25 @@ def load_images_from_folder(folder_path, label):
         if filename.endswith('.jpg') or filename.endswith('.png'):
             img_path = os.path.join(folder_path, filename)
             
-            # Open the image and convert it to grayscale
-            img = Image.open(img_path).convert('L')
+            try:
+                # Open the image and convert it to grayscale
+                img = Image.open(img_path).convert('L')
             
-            # Resize the image to 48x48 to match the FER2013 dataset
-            img = img.resize((48, 48))
+                # Resize the image to 48x48 to match the FER2013 dataset
+                img = img.resize((48, 48))
             
-            # Convert to NumPy array and normalise pixel values 
-            img_array = np.array(img) / 255.0
-            images.append(img_array)
-            labels.append(label)
+                # Convert to NumPy array and normalise pixel values 
+                img_array = np.array(img) / 255.0
+                images.append(img_array)
+                labels.append(label)
+            except Exception as e:
+                print(f"Error loading image {img_path}: {e}")
     return images, labels
 
 # Prepares either the train or test dataset by loading images from attentive and inattentive folders
 def prepare_dataset(split):
-    base_path = f'data/processed/{split}/'
-    # Image data
-    X = []
-    
-    # Labels
-    y =[]
+    base_path = f'data/combined/{split}/'
+    X, y = [], []
     
     # Load images and labels for attentive (1) and inattentive (2)
     attentive_images, attentive_labels = load_images_from_folder(os.path.join(base_path, 'attentive'), 1)
@@ -60,7 +59,7 @@ def main():
     np.save('data/npy/y_test.npy', y_test)
     
     # Output dataset statistics
-    print(f"Saved: {len(X_train)} training samples, {len(X_test)} test samples")
+    print(f"Saved: {len(X_train)} training samples and {len(X_test)} test samples")
     
 # Entry point to execute the script
 if __name__ == "__main__":
