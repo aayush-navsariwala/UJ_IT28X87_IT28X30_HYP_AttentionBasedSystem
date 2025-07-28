@@ -20,6 +20,9 @@ batch_size = 32
 
 # Train a single image and label
 def train_one_sample(x, y_true):
+    x = x.reshape(48, 48)
+    y_true = float(y_true)
+    
     # Perform forward pass and get model output
     y_pred = model.forward(x)
     
@@ -44,7 +47,7 @@ def train_model():
             # One image
             x = X_train[i]
             # Corresponding label
-            y =y_train[i]
+            y = float(y_train[i])
             
             # Train on one sample
             loss, y_pred  = train_one_sample(x, y)
