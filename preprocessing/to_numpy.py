@@ -14,7 +14,7 @@ def load_images_from_folder(folder_path, label):
                 # Open the image and convert it to grayscale
                 img = Image.open(img_path).convert('L')
             
-                # Resize the image to 48x48 to match the FER2013 dataset
+                # Resize the image to 48x48 to match the both datasets
                 img = img.resize((48, 48))
             
                 # Convert to NumPy array and normalise pixel values 
