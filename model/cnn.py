@@ -122,26 +122,36 @@ class SimpleCNN:
         return self.out_a
     
     def backward(self, y_true, learning_rate):
+        # Number of training samples 
         m = y_true.shape[0]
 
-        # Output layer
+        # Backpropagation through the output layer
+        # Compute the derivative of binary cross entropy loss compared to the predicted output
         dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a)
+        # Compute the derivative of sigmoid activation
         dOut_dZ = sigmoid_derivative(self.out_z)
-        dZ = dLoss_dOut * dOut_dZ  # shape: (1, 1)
-
+        # Chain rule
+        dZ = dLoss_dOut * dOut_dZ  
+        # Compute gradients for output weights and biases
         dW_out = np.dot(self.fc_a.T, dZ)
         db_out = np.sum(dZ, axis=0, keepdims=True)
 
-        # Fully connected layer
+        # Backpropagation through the fully connected layer
+        # Backpropagate to fully connected layer activation
         dA_fc = np.dot(dZ, self.out_weights.T)
+        # Derivative of ReLu applied to pre-activation
         dZ_fc = dA_fc * relu_derivative(self.fc_z)
 
+        # Gradients for fully connected weights and biases
         dW_fc = np.dot(self.fc_input.T, dZ_fc)
         db_fc = np.sum(dZ_fc, axis=0, keepdims=True)
 
         # Gradient descent update
+        # Update the output layer weights and biases
         self.out_weights -= learning_rate * dW_out
         self.out_bias -= learning_rate * db_out
+        
+        # Update fully connected layer weights and bias
         self.fc_weights -= learning_rate * dW_fc
         self.fc_bias -= learning_rate * db_fc
     
