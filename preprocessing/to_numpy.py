@@ -5,21 +5,13 @@ from utils.image_utils import load_and_process_image
 # Loads all images from a specified folder and do various things with them
 def load_images_from_folder(folder_path, label):
     images = []
-    labels =[]
+    labels = []
     for filename in os.listdir(folder_path):
-        if filename.endswith('.jpg') or filename.endswith('.png'):
-            img_path = os.path.join(folder_path, filename)
-            
+        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
             try:
-                # Open the image and convert it to grayscale
-                img = Image.open(img_path).convert('L')
-            
-                # Resize the image to 48x48 to match the both datasets
-                img = img.resize((48, 48))
-            
-                # Convert to NumPy array and normalise pixel values 
-                img_array = np.array(img) / 255.0
-                images.append(img_array)
+                img_path = os.path.join(folder_path, filename) 
+                img = load_and_process_image(img_path)
+                images.append(img)
                 labels.append(label)
             except Exception as e:
                 print(f"Error loading image {img_path}: {e}")
