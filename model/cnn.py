@@ -30,18 +30,32 @@ def binary_cross_entropy_derivative(y_true, y_pred):
 
 # Converts image to column matrix to simplify convolution as a matrix multiplication and assumes single channel image
 def im2col(image, kernel_size=3, stride=1):
+    # Get the height and width of the inputted image
     H, W = image.shape
+    
+    # Calculate the output feature map dimensions after convolution
     out_h = (H - kernel_size) // stride + 1
     out_w = (W - kernel_size) // stride + 1
+    
+    # Create a matrix to hold flattened kernel-sized patches
     cols = np.zeros((kernel_size * kernel_size, out_h * out_w))
     
+    # Index to track where to insert each flattened patch
     col_index = 0
+    
+    # Slide the kernel over the image with the given stride
     for i in range(0, H - kernel_size + 1, stride):
         for j in range(0, W - kernel_size + 1, stride):
-            # Flatten the 3x3 patch and store it 
-            patch = image[i:i+kernel_size, j:j+kernel_size].flatten()
-            cols[:, col_index] = patch
+            # Extract a kernel-sized patch from the image 
+            patch = image[i:i+kernel_size, j:j+kernel_size]
+            
+            # Flatten the patch into a 1D vector and store as a column
+            cols[:, col_index] = patch.flatten()
+            
+            # Move to the next column index
             col_index += 1
+    # cols: matrix where each column is a flattened patch
+    # out_h, out_w: the output dimensions after convolution        
     return cols, out_h, out_w
 
 # CNN class definition
