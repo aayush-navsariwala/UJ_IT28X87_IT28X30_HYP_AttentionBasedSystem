@@ -1,3 +1,5 @@
+import csv
+import os
 import numpy as np
 from cnn import SimpleCNN, binary_cross_entropy, binary_cross_entropy_derivative
 from tqdm import tqdm 
@@ -68,44 +70,56 @@ def train_model():
     # Early stopping counter
     patience = 0
     
-    for epoch in range(epochs):
-        # Total loss for the epoch 
-        total_loss = 0
-        # Total correct predictions
-        total_correct = 0
+    # Create logs folder and CSV file for logging training accuracy
+    os.makedirs("logs", exist_ok=True)
+    log_path = os.path.join("logs", "training_log.csv")
+    
+    with open(log_path, mode='w', newline='') as log_file:
+        writer = csv.writer(log_file)
+        # Row headers
+        writer.writerow(["Epoch", "Loss", "Accuracy"])
+    
+        for epoch in range(epochs):
+            # Total loss for the epoch 
+            total_loss = 0
+            # Total correct predictions
+            total_correct = 0
         
-        # Shuffle at start of epoch
-        indices = np.arange(len(X_train))
-        np.random.shuffle(indices)
-        X_train_shuffled = X_train[indices]
-        y_train_shuffled = y_train[indices]
+            # Shuffle at start of epoch
+            indices = np.arange(len(X_train))
+            np.random.shuffle(indices)
+            X_train_shuffled = X_train[indices]
+            y_train_shuffled = y_train[indices]
         
-        # Iterate through batces
-        for i in tqdm(range(0, len(X_train), batch_size), desc=f"Epoch {epoch+1}/{epochs}"):
-            end_i = min(i + batch_size, len(X_train))
-            batch_x = X_train_shuffled[i:end_i]
-            batch_y = y_train_shuffled[i:end_i]
+            # Iterate through batces
+            for i in tqdm(range(0, len(X_train), batch_size), desc=f"Epoch {epoch+1}/{epochs}"):
+                end_i = min(i + batch_size, len(X_train))
+                batch_x = X_train_shuffled[i:end_i]
+                batch_y = y_train_shuffled[i:end_i]
             
-            # Train on this batch
-            batch_loss, correct = train_one_batch(batch_x, batch_y)
-            total_loss += batch_loss * len(batch_x)
-            total_correct += correct
+                # Train on this batch
+                batch_loss, correct = train_one_batch(batch_x, batch_y)
+                total_loss += batch_loss * len(batch_x)
+                total_correct += correct
             
-        # Compute and display metrics  
-        avg_loss = total_loss / len(X_train)
-        acc = total_correct / len(X_train)
-        print(f"Epoch {epoch+1} — Loss: {avg_loss:.4f} — Accuracy: {acc:.4f}")
+            # Compute and display metrics  
+            avg_loss = total_loss / len(X_train)
+            acc = total_correct / len(X_train)
+            print(f"Epoch {epoch+1} — Loss: {avg_loss:.4f} — Accuracy: {acc:.4f}")
+            
+            # Write to the CSV log
+            writer.writerow([epoch + 1, avg_loss, acc])
         
-        # Early stopping logic
-        if acc > best_acc:
-            best_acc = acc
-            # Reset patience if improved
-            patience = 0
-        else:
-            patience += 1
-            if patience >= early_stopping_patience:
-                print("Early stopping triggered.")
-                break
+            # Early stopping logic
+            if acc > best_acc:
+                best_acc = acc
+                # Reset patience if improved
+                patience = 0
+            else:
+                patience += 1
+                if patience >= early_stopping_patience:
+                    print("Early stopping triggered.")
+                    break
 
 # Entry point of the script
 if __name__ == "__main__":
