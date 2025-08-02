@@ -61,20 +61,23 @@ def im2col(image, kernel_size=3, stride=1):
 # CNN class definition
 class SimpleCNN:
     def __init__(self):
-        # For reproducibility
+        # Set seed for reproducibility of random weight initialisation
         np.random.seed(42)
         
         # Layer 1: Convolutional layer with 1 filter of size 3x3
         self.conv1_filter = np.random.randn(3, 3) * 0.01
+        # Bias term for the convolutional output
         self.conv1_bias = 0.0
         
-        # Layer 2: Fully connected layer with input size determined by flattened pooled feature map
+        # Layer 2: Fully connected dense hidden layer with input size determined by flattened pooled feature map
         # 23x23 pooled output flattened to 529
         self.fc_weights = np.random.randn(529, 128) * 0.01
+        # Bias for the 128 neurons in the fully connected hidden layer
         self.fc_bias = np.zeros((1, 128))
         
         # Layer 3: Output layer with binary classification of 1 output neuron
         self.out_weights = np.random.randn(128, 1) * 0.01
+        # Bias for the single output neuron
         self.out_bias = np.zeros((1, 1))
         
     def forward(self, X):
