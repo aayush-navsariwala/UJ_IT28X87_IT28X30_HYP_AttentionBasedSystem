@@ -1,5 +1,6 @@
 import numpy as np
 from cnn import SimpleCNN
+import os
 
 def main():
     # Load preprocessed test data
@@ -19,6 +20,11 @@ def main():
     accuracy = model.evaluate(X_test, y_test)
     
     print(f"Test Accuracy: {accuracy * 100:.2f}%")
+    
+    # Save to the evaluation log
+    os.makedirs("logs", exist_ok=True)
+    with open("logs/evaluation_log.txt", "w") as f:
+        f.write(f"Test Accuracy: {accuracy * 100:.2f}%\n")
     
 if __name__ == "__main__":
     main()
