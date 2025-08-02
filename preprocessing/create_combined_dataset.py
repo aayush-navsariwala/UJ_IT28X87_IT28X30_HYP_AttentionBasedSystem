@@ -31,12 +31,22 @@ def collect_images(source_folder, label_name):
 # Function to load, process and save an image
 def save_image(image_path, dest_folder, prefix):
     try:
+        # Load the image, convert to grayscale, resize to 48x48 and normalise to [0, 1]
         img = load_and_process_image(image_path)
+        
+        # Scale pixel values back to [0, 255]
         img = (img * 255).astype(np.uint8)
+        
+        # Generate a new filename with a prefix to prevent duplicates
         filename = prefix + "_" + os.path.basename(image_path)
+        
+        # Create the full path to save the image
         full_path = os.path.join(dest_folder, filename)
+        
+        # Save the image using matplotlib with a grayscale colour map
         plt.imsave(full_path, img, cmap='gray')
     except Exception as e:
+        # Error handling if processing or saving fails
         print(f"Failed to save {image_path}: {e}")
 
 def main():
