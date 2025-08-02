@@ -81,33 +81,44 @@ class SimpleCNN:
         self.out_bias = np.zeros((1, 1))
         
     def forward(self, X):
-        # Convolution by applying 3x3 filter across input image
+        # Layer 1: Convolutional layer
+        # Convolution by applying 3x3 filter across input image (48x48)
         self.cols = []
+        # Vertical sliding window
         for i in range(46):
+            # Horizontal sliding window
             for j in range(46):
+                # 3x3 region from input
                 patch = X[i:i+3, j:j+3]
                 val = np.sum(self.conv1_filter * patch) + self.conv1_bias
                 self.cols.append(val)
+        # Reshape to 2D feature map
         conv_output = np.array(self.cols).reshape(46, 46)
         
-        # Activation of ReLu
+        # Layer 2: ReLu activation
+        # Applying ReLu to have non-linearity
         self.relu1 = relu(conv_output)
         
-        # Max pooling using 2x2 with stride 2 by manually downsampling by slicing
+        # Layer 3: Max Pooling layer
+        # Using 2x2 with stride 2 by slicing feature map from 46x46 to 23x23
         pooled = self.relu1[::2, ::2]
         
-        # Flattening the pooled feature map
+        # Layer 4: Flatten layer
+        # Flattening the pooled 2D feature map into a 1D vector
         self.flatten = pooled.flatten().reshape(1, -1)
         
-        # Fully connected layer with FC -> ReLu
+        # Layer 5: Fully Connected layer
+        # Dense layer with ReLu activation (1, 529) to (1, 128)
         self.fc_input = self.flatten
         self.fc_z = np.dot(self.fc_input, self.fc_weights) + self.fc_bias
         self.fc_a = relu(self.fc_z)
         
-        # Output layer with FC -> sigmoid for binary output
+        # Layer 6: Output layer
+        # Dense layer with sigmoid activation for binary classification (1, 128) to (1, 1)
         self.out_z = np.dot(self.fc_a, self.out_weights) + self.out_bias
         self.out_a = sigmoid(self.out_z)
         
+        # Final output with a probability value between 0 and 1
         return self.out_a
     
     def backward(self, y_true, learning_rate):
