@@ -156,14 +156,21 @@ class SimpleCNN:
         self.fc_bias -= learning_rate * db_fc
     
     def predict(self, X):
-        # Predicts the binary class for a given image
+        # Performs a binary classification on a given image
+        # Perform forward pass to get predicted probability
         output = self.forward(X)
+        # Applies binary threshold
         return 1 if output > 0.5 else 0
     
+    # Evaluates the model's accuracy on a given dataset
     def evaluate(self, X, y):
+        # Track the number of correct predictions
         correct = 0
         for i in range(len(X)):
+            # Predict class
             pred = self.predict(X[i])
+            # Compare with ground truth 
             if pred == y[i]:
                 correct += 1
+        # Return proportion of correct predictions
         return correct / len(X)
