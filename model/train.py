@@ -9,7 +9,7 @@ X_train = np.load('data/npy/X_train.npy')
 y_train = np.load('data/npy/y_train.npy')
 
 # Shuffle the dataset
-indices = np.arrange(len(X_train))
+indices = np.arange(len(X_train))
 np.random.shuffle(indices)
 
 X_train = X_train[indices]
