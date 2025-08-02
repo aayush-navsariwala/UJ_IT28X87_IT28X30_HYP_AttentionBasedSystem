@@ -15,8 +15,8 @@ np.random.shuffle(indices)
 X_train = X_train[indices]
 y_train = y_train[indices]
 
-# Use only a subset of the data for faster training (limited to 20000)
-subset_size = 20000
+# Use only a subset of the data for faster training
+subset_size = 8000
 X_train = X_train[:subset_size].astype(np.float32)
 y_train = y_train[:subset_size].reshape(-1, 1)
 
@@ -27,13 +27,13 @@ model = SimpleCNN()
 learning_rate = 0.01
 
 # Number of training iterations per data
-epochs = 10
+epochs = 5
 
 # Number of samples processed per training step
 batch_size = 32
 
-# Stop if accuracy does not improve for 2 epochs
-early_stopping_patience = 2
+# Stop if accuracy does not improve for 3 epochs
+early_stopping_patience = 3
 
 # Train a single batch of images
 def train_one_batch(batch_x, batch_y):
