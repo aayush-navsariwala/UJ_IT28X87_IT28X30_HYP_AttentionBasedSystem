@@ -1,7 +1,10 @@
 import os
 import shutil
 import random
-from PIL import Image
+import numpy as np
+import matplotlib.pyplot as plt
+from utils.image_utils import load_and_process_image
+
 
 # Specify the paths
 FER_TRAIN_PATH = 'data/processed/train'
@@ -28,17 +31,13 @@ def collect_images(source_folder, label_name):
 # Function to load, process and save an image
 def save_image(image_path, dest_folder, prefix):
     try:
-        # Convert to grayscale
-        img = Image.open(image_path).convert('L')
-        
-        # Resize to 48x48
-        img = img.resize(IMAGE_SIZE)
+        img = load_and_process_image(image_path)
+        img = (img * 255).astype(np.uint8)
         filename = prefix + "_" + os.path.basename(image_path)
-        
-        # Save image to output folder
-        img.save(os.path.join(dest_folder, filename))
+        full_path = os.path.join(dest_folder, filename)
+        plt.imsave(full_path, img, cmap='gray')
     except Exception as e:
-        print(f"Failed to process {image_path}: {e}")
+        print(f"Failed to save {image_path}: {e}")
 
 def main():
     # Get all image paths from FER-2013 and DriveGaze
