@@ -4,16 +4,25 @@ from utils.image_utils import load_and_process_image
 
 # Loads all images from a specified folder and do various things with them
 def load_images_from_folder(folder_path, label):
+    # List to store processed image arrays
     images = []
+    # List to store corresponding labels
     labels = []
     for filename in os.listdir(folder_path):
+        # Filter for supported file formats
         if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
             try:
+                # Build full image path
                 img_path = os.path.join(folder_path, filename) 
+                
+                # Load, grayscale, resize and normalise the image
                 img = load_and_process_image(img_path)
+                
+                # Append processed image and label to respective lists
                 images.append(img)
                 labels.append(label)
             except Exception as e:
+                # Error handling for loading images from dataset
                 print(f"Error loading image {img_path}: {e}")
     return images, labels
 
