@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from PIL import Image
+from utils.image_utils import load_and_process_image
 
 # Loads all images from a specified folder and do various things with them
 def load_images_from_folder(folder_path, label):
@@ -30,7 +30,7 @@ def prepare_dataset(split):
     base_path = f'data/combined/{split}/'
     X, y = [], []
     
-    # Load images and labels for attentive (1) and inattentive (2)
+    # Load images and labels for attentive (1) and inattentive (0)
     attentive_images, attentive_labels = load_images_from_folder(os.path.join(base_path, 'attentive'), 1)
     inattentive_images, inattentive_labels = load_images_from_folder(os.path.join(base_path, 'inattentive'), 0)
     
