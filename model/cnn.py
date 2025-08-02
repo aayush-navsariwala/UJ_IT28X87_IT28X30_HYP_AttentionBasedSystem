@@ -164,13 +164,33 @@ class SimpleCNN:
     
     # Evaluates the model's accuracy on a given dataset
     def evaluate(self, X, y):
-        # Track the number of correct predictions
-        correct = 0
+        # Return accuracy, precision, recall and F1 score
+        TP = FP = FN = TN = 0
+        
         for i in range(len(X)):
             # Predict class
             pred = self.predict(X[i])
+            true = y[i]
             # Compare with ground truth 
-            if pred == y[i]:
-                correct += 1
+            if pred == 1 and true == 1:
+                TP += 1
+            elif pred == 1 and true == 0:
+                FP += 1
+            elif pred == 0 and true == 1:
+                FN += 1
+            elif pred == 0 and true == 0:
+                TN += 1
+                
+        # Compute metrics
+        accuracy = (TP + TN) / (TP + TN + FP + FN)
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
         # Return proportion of correct predictions
-        return correct / len(X)
+        return {
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1_score": f1
+        }

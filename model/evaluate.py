@@ -14,17 +14,19 @@ def main():
     # Initialise the model 
     model = SimpleCNN()
     
-    # Adding weight loading here later
-    
     # Evaluate model on test data
-    accuracy = model.evaluate(X_test, y_test)
+    results = model.evaluate(X_test, y_test)
     
-    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+    print(f"Test Accuracy : {results['accuracy'] * 100:.2f}%")
+    print(f"Precision     : {results['precision']:.4f}")
+    print(f"Recall        : {results['recall']:.4f}")
+    print(f"F1 Score      : {results['f1_score']:.4f}")
     
     # Save to the evaluation log
     os.makedirs("logs", exist_ok=True)
     with open("logs/evaluation_log.txt", "w") as f:
-        f.write(f"Test Accuracy: {accuracy * 100:.2f}%\n")
+        for metric, value in results.items():
+            f.write(f"{metric}: {value:.4f}\n")
     
 if __name__ == "__main__":
     main()

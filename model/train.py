@@ -45,8 +45,10 @@ def train_one_batch(batch_x, batch_y):
     for i in range(len(batch_x)):
         # Ensure image shape is 48x48
         x = batch_x[i].reshape(48, 48)
-        # Convert label to float
-        y = float(batch_y[i])
+        # Extract scalar label
+        y_scalar = int(batch_y[i])
+        # Convert it to a 1D NumPy array with shape
+        y = np.array([y_scalar])  
         
         # Forward and backward pass
         y_pred = model.forward(x)
@@ -57,7 +59,7 @@ def train_one_batch(batch_x, batch_y):
         
         batch_loss += loss
         # Count correct predictions
-        if (y_pred > 0.5 and y == 1) or (y_pred <= 0.5 and y == 0):
+        if (y_pred > 0.5 and y_scalar == 1) or (y_pred <= 0.5 and y_scalar == 0):
             correct += 1
     
     # Return average loss and correct predictions
