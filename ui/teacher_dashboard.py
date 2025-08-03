@@ -15,10 +15,11 @@ from collections import deque
 from utils.image_utils import rgb_to_grayscale, resize_image
 from model.cnn import SimpleCNN
 
-# Model and tracking setup
+# Model initialisation
 model = SimpleCNN()
 # Store the last 30 states
 history = deque(maxlen=30)
+# Store timestamps
 timestamps = deque(maxlen=30)
 
 # UI setup
@@ -44,6 +45,7 @@ log_box.pack()
 graph_frame = tk.Frame(root)
 graph_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
 
+# Create a matplotlib figure and axis for plotting
 fig, ax = plt.subplots(figsize=(5, 3))
 line, = ax.plot([], [], marker='o')
 ax.set_ylim(-0.2, 1.2)
@@ -51,22 +53,27 @@ ax.set_ylabel("Attention (1=Yes, 0=No)")
 ax.set_xlabel("Time (HH:MM:SS)")
 ax.set_title("Student Attention Over Time")
 
+# Embed matplotlib canvas into the Tkinter frame
 canvas = FigureCanvasTkAgg(fig, master=graph_frame)
 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-# Webcam setup
+# Webcam setup with default webcam
 cap = cv2.VideoCapture(0)
 
+# Method to update the UI every 5 seconds
 def update():
+    # Capture from the webcam
     ret, frame = cap.read()
     if not ret:
+        # Retry after delay if the frame is not captured
         root.after(1000, update)
         return
     
+    # Resize the captured frame for display and processing
     frame = cv2.resize(frame, (200, 200))
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
-    # Grayscaling and preprocess
+    # Grayscaling, resizing and normalise
     gray = rgb_to_grayscale(rgb)
     resized = resize_image(gray, (48, 48))
     img = resized / 255.0
@@ -76,13 +83,13 @@ def update():
     status = "Attentive ✅" if pred == 1 else "Inattentive ⚠️"
     timestamp = time.strftime("%H:%M:%S")
     
-    # Update the history and UI
+    # Update the log and history
     history.append(pred)
     timestamps.append(timestamp)
     log_box.insert(tk.END, f"[{timestamp}] {status}\n")
     log_box.see(tk.END)
     
-    # Update the graph
+    # Update the graph with new values
     ax.clear()
     ax.plot(timestamps, history, marker='o', color='green' if pred else 'red')
     ax.set_ylim(-0.2, 1.2)
@@ -97,13 +104,13 @@ def update():
     video_label.imgtk = imgtk
     video_label.configure(image=imgtk)
     
-    # Repeat every 5 seconds
+    # Schedule update every 5 seconds
     root.after(5000, update)
     
-# Start the loop
+# Start the main loop
 update()
 root.mainloop()
 
-# Clean up
+# Clean up on close
 cap.release()
 cv2.destroyAllWindows()
