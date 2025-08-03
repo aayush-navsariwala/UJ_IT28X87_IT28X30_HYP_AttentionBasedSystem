@@ -1,7 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import cv2
 import time
 import numpy as np
-from utils.image_utils import rgb_to_grayscale, resize_image
+from utils.image_utils import resize_image, rgb_to_grayscale
 from model.cnn import SimpleCNN
 
 # Initialise the model
