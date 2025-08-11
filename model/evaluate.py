@@ -3,10 +3,11 @@ from cnn import SimpleCNN
 import os
 from tqdm import tqdm
 
-# ---------------- Config ----------------
-# For a quick run, start with a subset. Set to None to use entire test set.
+# Set to 5000 for now. Need to change to None to run whole set
 MAX_SAMPLES = 5000
+"""
 THRESHOLD = 0.5
+"""
 WEIGHTS_PATH = "weights/best.npz"
 # ----------------------------------------
 
@@ -18,10 +19,34 @@ def main():
     X_test = np.load('data/npy/X_test.npy').astype(np.float32)
     y_test = np.load('data/npy/y_test.npy').astype(np.int32).reshape(-1)
 
+    # Shuffle the test set first
+    rng = np.random.default_rng(42)
+    perm = rng.permutation(len(y_test))
+    X_test = X_test[perm]
+    y_test = y_test[perm]
+
     # Optional subset for speed
     if MAX_SAMPLES is not None:
-        X_test = X_test[:MAX_SAMPLES]
-        y_test = y_test[:MAX_SAMPLES]
+        pos_idx = np.where(y_test == 1)[0]
+        neg_idx = np.where(y_test == 0)[0]
+        rng.shuffle(pos_idx)
+        rng.shuffle(neg_idx)
+        
+        per_class = MAX_SAMPLES // 2
+        take_pos = min(per_class, len(pos_idx))
+        take_neg = min(per_class, len(neg_idx))
+        sel = np.concatenate([pos_idx[:take_pos], neg_idx[:take_neg]])
+        rng.shuffle(sel)
+
+        X_test = X_test[sel]
+        y_test = y_test[sel]
+        
+    # Report class distribution before evaluating
+    n_pos = int((y_test == 1).sum())
+    n_neg = int((y_test == 0).sum())
+    print(f"Class distribution in evaluation set → positives={n_pos}, negatives={n_neg}")
+    if n_pos == 0 or n_neg == 0:
+        print("One class is missing so metrics will be misleading.")
 
     # Init model (and optionally load trained weights)
     model = SimpleCNN()
