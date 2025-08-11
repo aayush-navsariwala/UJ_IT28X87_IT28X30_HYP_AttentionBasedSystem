@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 # Rectified linear unit activation function
@@ -122,9 +123,6 @@ class SimpleCNN:
         return self.out_a
     
     def backward(self, y_true, learning_rate):
-        # Number of training samples 
-        m = y_true.shape[0]
-
         # Backpropagation through the output layer
         # Compute the derivative of binary cross entropy loss compared to the predicted output
         dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a)
@@ -155,12 +153,37 @@ class SimpleCNN:
         self.fc_weights -= learning_rate * dW_fc
         self.fc_bias -= learning_rate * db_fc
     
+    def save_weights(self, path):
+        # Save the model parameters to a single .npz file
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.savez(
+            path,
+            conv1_filter=self.conv1_filter,
+            conv1_bias=np.array([self.conv1_bias], dtype=np.float32),
+            fc_weights=self.fc_weights,
+            fc_bias=self.fc_bias,
+            out_weights=self.out_weights,
+            out_bias=self.out_bias
+        )
+        
+    def load_weights(self, path):
+        
+        # Load model parameters from a .npz file saved by save_weights().
+        data = np.load(path)
+        self.conv1_filter = data["conv1_filter"]
+        self.conv1_bias   = float(data["conv1_bias"][0])
+        self.fc_weights   = data["fc_weights"]
+        self.fc_bias      = data["fc_bias"]
+        self.out_weights  = data["out_weights"]
+        self.out_bias     = data["out_bias"]
+        
+    
     def predict(self, X):
         # Performs a binary classification on a given image
-        # Perform forward pass to get predicted probability
-        output = self.forward(X)
+        # Perform forward pass to get scalar probability
+        prob = float(self.forward(X).squeeze())
         # Applies binary threshold
-        return 1 if output > 0.5 else 0
+        return 1 if prob > 0.5 else 0
     
     # Evaluates the model's accuracy on a given dataset
     def evaluate(self, X, y):
