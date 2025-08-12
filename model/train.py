@@ -16,7 +16,7 @@ X_train = X_train[indices]
 y_train = y_train[indices]
 
 # Use only a subset of the data for faster training
-subset_size = 1000
+subset_size = 5000
 X_train = X_train[:subset_size].astype(np.float32)
 y_train = y_train[:subset_size].reshape(-1, 1)
 
