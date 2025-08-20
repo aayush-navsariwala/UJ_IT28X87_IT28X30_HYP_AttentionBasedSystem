@@ -19,15 +19,17 @@ def sigmoid_derivative(x):
     return sig * (1 - sig)
 
 # Binary cross enthropy loss for binary classification
-def binary_cross_entropy(y_true, y_pred):
-    # Small value to prevent log(0)
+def binary_cross_entropy(y_true, y_pred, w_pos=1.0, w_neg=1.0):
     eps = 1e-8
-    return -np.mean(y_true * np.log(y_pred + eps) + (1 - y_true) * np.log(1 - y_pred + eps))
+    return -np.mean(w_pos * y_true * np.log(y_pred + eps) +
+                    w_neg * (1 - y_true) * np.log(1 - y_pred + eps))
 
 # Derivative of binary cross enthropy loss
-def binary_cross_entropy_derivative(y_true, y_pred):
+def binary_cross_entropy_derivative(y_true, y_pred, w_pos=1.0, w_neg=1.0):
     eps = 1e-8
-    return (-(y_true / (y_pred + eps)) + ((1 - y_true) / (1 - y_pred + eps)))
+    # dL/dŷ for weighted BCE
+    return (-(w_pos * y_true) / (y_pred + eps) +
+             (w_neg * (1 - y_true)) / (1 - y_pred + eps))
 
 # Converts image to column matrix to simplify convolution as a matrix multiplication and assumes single channel image
 def im2col(image, kernel_size=3, stride=1):
@@ -122,10 +124,10 @@ class SimpleCNN:
         # Final output with a probability value between 0 and 1
         return self.out_a
     
-    def backward(self, y_true, learning_rate):
+    def backward(self, y_true, learning_rate, w_pos=1.0, w_neg=1.0):
         # Backpropagation through the output layer
         # Compute the derivative of binary cross entropy loss compared to the predicted output
-        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a)
+        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a, w_pos, w_neg)
         # Compute the derivative of sigmoid activation
         dOut_dZ = sigmoid_derivative(self.out_z)
         # Chain rule
