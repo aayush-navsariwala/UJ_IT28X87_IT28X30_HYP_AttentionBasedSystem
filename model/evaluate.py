@@ -5,14 +5,23 @@ from tqdm import tqdm
 
 # Set to 5000 for now. Need to change to None to run whole set
 MAX_SAMPLES = 5000
-"""
-THRESHOLD = 0.5
-"""
 WEIGHTS_PATH = "weights/best.npz"
-# ----------------------------------------
+THRESHOLD_PATH = "weights/threshold.txt"
 
 def safe_div(a, b):
     return (a / b) if b != 0 else 0.0
+
+def load_threshold(default=0.5):
+    th = default
+    try:
+        with open(THRESHOLD_PATH, "r") as f:
+            th = float(f.read().strip())
+            print(f"Using saved threshold: {th:.3f}")
+    except FileNotFoundError:
+        print(f"No threshold file found at {THRESHOLD_PATH}; using default {default:.2f}")
+    except Exception as e:
+        print(f"Warning: failed to read threshold file ({e}); using default {default:.2f}")
+    return th
 
 def main():
     # Load data
@@ -49,10 +58,16 @@ def main():
         print("One class is missing so metrics will be misleading.")
 
     # Init model (and optionally load trained weights)
-    model = SimpleCNN()
+        model = SimpleCNN()
     if WEIGHTS_PATH and os.path.exists(WEIGHTS_PATH):
         model.load_weights(WEIGHTS_PATH)
+        print(f"Loaded weights from {WEIGHTS_PATH}")
+    else:
+        print(f"Warning: weights file not found at {WEIGHTS_PATH}. Evaluating with random weights.")
 
+    # Load decision threshold (defaults to 0.5 if file missing)
+    threshold = load_threshold(default=0.5)
+    
     # Confusion matrix counters
     TP = FP = TN = FN = 0
 
@@ -61,8 +76,8 @@ def main():
         x = X_test[i].reshape(48, 48)
         y_true = int(y_test[i])
 
-        # Model outputs 0/1 via predict()
-        y_pred = model.predict(x)  # uses 0.5 threshold internally
+        # Use the tuned threshold in predict()
+        y_pred = model.predict(x, threshold=threshold)
 
         # Update confusion counts
         if y_true == 1 and y_pred == 1:
@@ -83,6 +98,7 @@ def main():
     # Print
     print("\nResults")
     print(f"Samples      : {len(X_test)}")
+    print(f"Threshold    : {threshold:.3f}")
     print(f"Accuracy     : {accuracy * 100:.2f}%")
     print(f"Precision    : {precision:.4f}")
     print(f"Recall       : {recall:.4f}")
@@ -93,6 +109,7 @@ def main():
     os.makedirs("logs", exist_ok=True)
     with open("logs/evaluation_log.txt", "w") as f:
         f.write(f"samples={len(X_test)}\n")
+        f.write(f"threshold={threshold:.6f}\n")
         f.write(f"accuracy={accuracy:.6f}\n")
         f.write(f"precision={precision:.6f}\n")
         f.write(f"recall={recall:.6f}\n")
@@ -101,34 +118,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-""""
-def main():
-    # Load preprocessed test data
-    X_test = np.load('data/npy/X_test.npy')
-    y_test = np.load('data/npy/y_test.npy')
-    
-    # Ensure proper data shape
-    X_test = X_test.astype(np.float32)
-    y_test = y_test.astype(np.int32).reshape(-1)
-    
-    # Initialise the model 
-    model = SimpleCNN()
-    
-    # Evaluate model on test data
-    results = model.evaluate(X_test, y_test)
-    
-    print(f"Test Accuracy : {results['accuracy'] * 100:.2f}%")
-    print(f"Precision     : {results['precision']:.4f}")
-    print(f"Recall        : {results['recall']:.4f}")
-    print(f"F1 Score      : {results['f1_score']:.4f}")
-    
-    # Save to the evaluation log
-    os.makedirs("logs", exist_ok=True)
-    with open("logs/evaluation_log.txt", "w") as f:
-        for metric, value in results.items():
-            f.write(f"{metric}: {value:.4f}\n")
-    
-if __name__ == "__main__":
-    main()
-"""
