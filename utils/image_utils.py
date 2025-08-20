@@ -29,11 +29,18 @@ def load_and_process_image(path, size=(48, 48)):
     # Convert to grayscale if RGB
     if img.ndim == 3 and img.shape[2] == 3:
         img = rgb_to_grayscale(img)
-    elif img.ndim == 2:
-        pass  
-    else:
+    elif img.ndim != 2:
         raise ValueError("Unsupported image shape")
 
     # Normalise to 0, 1
     img = resize_image(img, size)
-    return img / 255.0  
+    
+    # Normalise image
+    if img.dtype == np.uint8:
+        img = img.astype(np.float32) / 255.0
+    else:
+        img = img.astype(np.float32)
+        # Clipping if JPEG read
+        img = np.clip(img, 0.0, 1.0)
+        
+    return img
