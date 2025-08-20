@@ -96,7 +96,7 @@ def train_model():
     # Early stopping counter
     patience = 0
     
-    # CSV
+    # CSV logging
     with open(log_path, mode='w', newline='') as f:
         writer = csv.writer(f)
         # Row headers
@@ -104,7 +104,7 @@ def train_model():
 
         for epoch in range(1, epochs + 1):
             # Shuffle training data for each epoch
-            idx = np.arrange(len(X_tr))
+            idx = np.arange(len(X_tr))
             np.random.shuffle(idx)
             Xs = X_tr[idx]
             ys = y_tr[idx]
