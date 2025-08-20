@@ -180,12 +180,12 @@ class SimpleCNN:
         self.out_bias     = data["out_bias"]
         
     
-    def predict(self, X):
+    def predict(self, X, threshold=0.5):
         # Performs a binary classification on a given image
         # Perform forward pass to get scalar probability
         prob = float(self.forward(X).squeeze())
         # Applies binary threshold
-        return 1 if prob > 0.5 else 0
+        return 1 if prob > threshold else 0
     
     # Evaluates the model's accuracy on a given dataset
     def evaluate(self, X, y):
