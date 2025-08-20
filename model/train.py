@@ -6,12 +6,12 @@ from cnn import SimpleCNN, binary_cross_entropy
 
 # Configuration
 np.random.seed(42)
-subset_size = 6969
+subset_size = 5000
 learning_rate = 0.01
-epochs = 5
+epochs = 3
 batch_size = 32
 val_ratio = 0.10
-early_stopping_patience = 3
+early_stopping_patience = 2
 weights_path = "weights/best.npz"
 log_path = "logs/training_log.csv"
 
