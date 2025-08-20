@@ -17,6 +17,8 @@ from model.cnn import SimpleCNN
 
 # Model initialisation
 model = SimpleCNN()
+# Load trained weights
+model.load_weights("weights/best.npz")
 # Store the last 30 states
 history = deque(maxlen=30)
 # Store timestamps
