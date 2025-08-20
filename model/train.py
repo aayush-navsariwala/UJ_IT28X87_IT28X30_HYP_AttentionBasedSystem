@@ -1,44 +1,43 @@
 import csv
 import os
 import numpy as np
-from cnn import SimpleCNN, binary_cross_entropy, binary_cross_entropy_derivative
-from tqdm import tqdm 
+from tqdm import tqdm
+from cnn import SimpleCNN, binary_cross_entropy 
+
+# Configuration
+np.random.seed(42)
+subset_size = 6969
+learning_rate = 0.01
+epochs = 5
+batch_size = 32
+val_ratio = 0.10
+early_stopping_patience = 3
+weights_path = "weights/best.npz"
+log_path = "logs/training_log.csv"
 
 # Load preprocessed training data 
-X_train = np.load('data/npy/X_train.npy')
-y_train = np.load('data/npy/y_train.npy')
+X = np.load('data/npy/X_train.npy')
+y = np.load('data/npy/y_train.npy')
 
 # Shuffle the dataset
-indices = np.arange(len(X_train))
-np.random.shuffle(indices)
+idx = np.arange(len(X))
+np.random.shuffle(idx)
+X = X[idx][:subset_size].astype(np.float32)
+y = y[idx][:subset_size].reshape(-1, 1)
 
-X_train = X_train[indices]
-y_train = y_train[indices]
-
-# Use only a subset of the data for faster training
-subset_size = 25000
-X_train = X_train[:subset_size].astype(np.float32)
-y_train = y_train[:subset_size].reshape(-1, 1)
+# Train/Val split
+n = len(X)
+split = int(n * (1 - val_ratio))
+X_tr, X_val = X[:split], X[split:]
+y_tr, y_val = y[:split], y[split:]
 
 # Initialise model and training parameters
 model = SimpleCNN()
 
-# Step size for gradient descent
-learning_rate = 0.01
-
-# Number of training iterations per data
-epochs = 5
-
-# Number of samples processed per training step
-batch_size = 32
-
-# Stop if accuracy does not improve for 3 epochs
-early_stopping_patience = 3
-
-# Train a single batch of images
+# Train a single batch of images and update their weights
 def train_one_batch(batch_x, batch_y):
     # Sum of batch losses
-    batch_loss = 0
+    batch_loss = 0.0
     # Count of correct predictions
     correct = 0
     
@@ -48,14 +47,14 @@ def train_one_batch(batch_x, batch_y):
         # Extract scalar label
         y_scalar = int(batch_y[i])
         # Convert it to a 1D NumPy array with shape
-        y = np.array([y_scalar])  
+        y_vec = np.array([y_scalar])  
         
         # Forward and backward pass
         y_pred = model.forward(x)
         # Calculate loss
-        loss = binary_cross_entropy(y, y_pred)
+        loss = binary_cross_entropy(y_vec, y_pred)
         # Update weights
-        model.backward(y, learning_rate)
+        model.backward(y_vec, learning_rate)
         
         batch_loss += loss
         # Count correct predictions
@@ -65,58 +64,83 @@ def train_one_batch(batch_x, batch_y):
     # Return average loss and correct predictions
     return batch_loss / len(batch_x), correct
 
+def eval_one_epoch(Xd, yd):
+    # Evaluate loss/accuracy on a dataset without updating the weights
+    total_loss = 0.0
+    total_correct = 0
+    for i in range(0, len(Xd), batch_size):
+        end_i = min(i + batch_size, len(Xd))
+        bx = Xd[i:end_i]
+        by = yd[i:end_i]
+        
+        # Micro-batch loop for consistency with predict()
+        for j in range(len(bx)):
+            x = bx[j].reshape(48, 48)
+            y_scalar = int(by[j])
+            y_vec = np.array([y_scalar])
+            y_pred = model.forward(x)
+            total_loss += binary_cross_entropy(y_vec, y_pred)
+            if (y_pred > 0.5 and y_scalar == 1) or (y_pred <= 0.5 and y_scalar == 0):
+                total_correct += 1
+    avg_loss = total_loss / len(Xd)
+    acc = total_correct / len(Xd)
+    return avg_loss, acc
+
 # Main training loop for all epochs
 def train_model():
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("weights", exist_ok=True)
+    
     # Best accuracy seen so far
-    best_acc = 0
+    best_val_acc = 0.0
     # Early stopping counter
     patience = 0
     
-    # Create logs folder and CSV file for logging training accuracy
-    os.makedirs("logs", exist_ok=True)
-    log_path = os.path.join("logs", "training_log.csv")
-    
-    with open(log_path, mode='w', newline='') as log_file:
-        writer = csv.writer(log_file)
+    # CSV
+    with open(log_path, mode='w', newline='') as f:
+        writer = csv.writer(f)
         # Row headers
-        writer.writerow(["Epoch", "Loss", "Accuracy"])
-    
-        for epoch in range(epochs):
-            # Total loss for the epoch 
-            total_loss = 0
-            # Total correct predictions
-            total_correct = 0
-        
-            # Shuffle at start of epoch
-            indices = np.arange(len(X_train))
-            np.random.shuffle(indices)
-            X_train_shuffled = X_train[indices]
-            y_train_shuffled = y_train[indices]
+        writer.writerow(["Epoch", "TrainLoss", "TrainAccuracy", "ValLoss", "ValAcc"])
+
+        for epoch in range(1, epochs + 1):
+            # Shuffle training data for each epoch
+            idx = np.arrange(len(X_tr))
+            np.random.shuffle(idx)
+            Xs = X_tr[idx]
+            ys = y_tr[idx]
+            
+            # Train epoch
+            train_loss_sum = 0.0
+            train_correct_sum = 0
         
             # Iterate through batces
-            for i in tqdm(range(0, len(X_train), batch_size), desc=f"Epoch {epoch+1}/{epochs}"):
-                end_i = min(i + batch_size, len(X_train))
-                batch_x = X_train_shuffled[i:end_i]
-                batch_y = y_train_shuffled[i:end_i]
+            for i in tqdm(range(0, len(Xs), batch_size), desc=f"Epoch {epoch}/{epochs}"):
+                end_i = min(i + batch_size, len(Xs))
+                bx, by = Xs[i:end_i], ys[i:end_i]
+                b_loss, b_correct = train_one_batch(bx, by)
+                train_loss_sum += b_loss * len(bx)
+                train_correct_sum += b_correct
+                
+            train_loss = train_loss_sum / len(Xs)
+            train_acc = train_correct_sum / len(Xs)
             
-                # Train on this batch
-                batch_loss, correct = train_one_batch(batch_x, batch_y)
-                total_loss += batch_loss * len(batch_x)
-                total_correct += correct
+            # Validate epochs
+            val_loss, val_acc = eval_one_epoch(X_val, y_val)
             
-            # Compute and display metrics  
-            avg_loss = total_loss / len(X_train)
-            acc = total_correct / len(X_train)
-            print(f"Epoch {epoch+1} — Loss: {avg_loss:.4f} — Accuracy: {acc:.4f}")
+            print(f"Epoch {epoch} — "
+                  f"Train: loss {train_loss:.4f}, acc {train_acc:.4f} | "
+                  f"Val: loss {val_loss:.4f}, acc {val_acc:.4f}")
             
-            # Write to the CSV log
-            writer.writerow([epoch + 1, avg_loss, acc])
-        
+            writer.writerow([epoch, train_loss, train_acc, val_loss, val_acc])
+
             # Early stopping logic
-            if acc > best_acc:
-                best_acc = acc
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
                 # Reset patience if improved
                 patience = 0
+                # Saving the improved trained model
+                model.save_weights(weights_path)
+                print(f"Saved new best weights to {weights_path} (val_acc={best_val_acc:.4f})")
             else:
                 patience += 1
                 if patience >= early_stopping_patience:
