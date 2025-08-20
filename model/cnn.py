@@ -22,14 +22,13 @@ def sigmoid_derivative(x):
 def binary_cross_entropy(y_true, y_pred, w_pos=1.0, w_neg=1.0):
     eps = 1e-8
     return -np.mean(w_pos * y_true * np.log(y_pred + eps) +
-                    w_neg * (1 - y_true) * np.log(1 - y_pred + eps))
+                    w_neg * (1.0 - y_true) * np.log(1.0 - y_pred + eps))
 
 # Derivative of binary cross enthropy loss
 def binary_cross_entropy_derivative(y_true, y_pred, w_pos=1.0, w_neg=1.0):
     eps = 1e-8
     # dL/dŷ for weighted BCE
-    return (-(w_pos * y_true) / (y_pred + eps) +
-             (w_neg * (1 - y_true)) / (1 - y_pred + eps))
+    return (-(w_pos * y_true) / (y_pred + eps)) + (w_neg * (1.0 - y_true)) / (1.0 - y_pred + eps)
 
 # Converts image to column matrix to simplify convolution as a matrix multiplication and assumes single channel image
 def im2col(image, kernel_size=3, stride=1):
@@ -125,13 +124,16 @@ class SimpleCNN:
         return self.out_a
     
     def backward(self, y_true, learning_rate, w_pos=1.0, w_neg=1.0):
+        # Ensure the array
+        if not isinstance(y_true, np.ndarray):
+            y_true = np.array([y_true], dtype=np.float32)
         # Backpropagation through the output layer
         # Compute the derivative of binary cross entropy loss compared to the predicted output
-        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a, w_pos, w_neg)
+        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a, w_pos=w_pos, w_neg=w_neg)
         # Compute the derivative of sigmoid activation
         dOut_dZ = sigmoid_derivative(self.out_z)
         # Chain rule
-        dZ = dLoss_dOut * dOut_dZ  
+        dZ = dLoss_dOut * dOut_dZ
         # Compute gradients for output weights and biases
         dW_out = np.dot(self.fc_a.T, dZ)
         db_out = np.sum(dZ, axis=0, keepdims=True)
@@ -149,11 +151,11 @@ class SimpleCNN:
         # Gradient descent update
         # Update the output layer weights and biases
         self.out_weights -= learning_rate * dW_out
-        self.out_bias -= learning_rate * db_out
+        self.out_bias   -= learning_rate * db_out
         
         # Update fully connected layer weights and bias
         self.fc_weights -= learning_rate * dW_fc
-        self.fc_bias -= learning_rate * db_fc
+        self.fc_bias    -= learning_rate * db_fc
     
     def save_weights(self, path):
         # Save the model parameters to a single .npz file

@@ -92,6 +92,25 @@ def eval_one_epoch(Xd, yd):
     acc = total_correct / len(Xd)
     return avg_loss, acc
 
+def find_best_threshold(Xv, yv, thresholds=np.linspace(0.1, 0.9, 33)):
+    best_t, best_f1 = 0.5, -1.0
+    for t in thresholds:
+        TP=FP=TN=FN=0
+        for i in range(len(Xv)):
+            x = Xv[i].reshape(48,48)
+            y = int(yv[i])
+            pred = model.predict(x, threshold=t)
+            if y==1 and pred==1: TP+=1
+            elif y==0 and pred==1: FP+=1
+            elif y==0 and pred==0: TN+=1
+            elif y==1 and pred==0: FN+=1
+        precision = TP/(TP+FP) if TP+FP>0 else 0.0
+        recall    = TP/(TP+FN) if TP+FN>0 else 0.0
+        f1 = (2*precision*recall)/(precision+recall) if precision+recall>0 else 0.0
+        if f1 > best_f1:
+            best_f1, best_t = f1, t
+    return best_t, best_f1
+        
 # Main training loop for all epochs
 def train_model():
     os.makedirs("logs", exist_ok=True)
@@ -146,7 +165,12 @@ def train_model():
                 patience = 0
                 # Saving the improved trained model
                 model.save_weights(weights_path)
-                print(f"Saved new best weights to {weights_path} (val_acc={best_val_acc:.4f})")
+                # Save decision threshold tuned on validation
+                best_t, best_f1 = find_best_threshold(X_val, y_val)
+                with open("weights/threshold.txt", "w") as tf:
+                    tf.write(str(best_t))
+                print(f"Saved new best weights to {weights_path} (val_acc={best_val_acc:.4f}); "
+                    f"chosen threshold={best_t:.3f} (val F1={best_f1:.3f})")
             else:
                 patience += 1
                 if patience >= early_stopping_patience:
