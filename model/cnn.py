@@ -60,6 +60,17 @@ def im2col(image, kernel_size=3, stride=1):
     # out_h, out_w: the output dimensions after convolution        
     return cols, out_h, out_w
 
+def maxpool2x2(a: np.ndarray) -> np.ndarray:
+    # True max pooling on a 2D feature map
+    # Input: a of shape (H, W) with even H and W
+    # Output: pooled of shape (H/2, W/2) 
+    H, W = a.shape
+    out = np.zeros((H // 2, W // 2), dtype=a.dtype)
+    for i in range(0, H, 2):
+        for j in range(0, W, 2):
+            out[i // 2, j // 2] = np.max(a[i:i+2, j:j+2])
+    return out
+
 # CNN class definition
 class SimpleCNN:
     def __init__(self):
@@ -102,8 +113,9 @@ class SimpleCNN:
         self.relu1 = relu(conv_output)
         
         # Layer 3: Max Pooling layer
-        # Using 2x2 with stride 2 by slicing feature map from 46x46 to 23x23
-        pooled = self.relu1[::2, ::2]
+        # With stride 2 by slicing feature map from 46x46 to 23x23 via true max pooling
+        pooled = maxpool2x2(self.relu1)  
+
         
         # Layer 4: Flatten layer
         # Flattening the pooled 2D feature map into a 1D vector
