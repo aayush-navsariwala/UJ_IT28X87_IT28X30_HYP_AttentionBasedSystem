@@ -31,6 +31,12 @@ split = int(n * (1 - val_ratio))
 X_tr, X_val = X[:split], X[split:]
 y_tr, y_val = y[:split], y[split:]
 
+pos = int(np.sum(y_tr))
+neg = len(y_tr) - pos
+w_pos = (neg / max(1, pos)) 
+w_neg = 1.0
+print(f"class weights -> w_pos:{w_pos:.3f} w_neg:{w_neg:.3f}")
+
 # Initialise model and training parameters
 model = SimpleCNN()
 
@@ -47,14 +53,14 @@ def train_one_batch(batch_x, batch_y):
         # Extract scalar label
         y_scalar = int(batch_y[i])
         # Convert it to a 1D NumPy array with shape
-        y_vec = np.array([y_scalar])  
+        y_vec = np.array([y_scalar], dtype=np.float32)  
         
         # Forward and backward pass
         y_pred = model.forward(x)
         # Calculate loss
-        loss = binary_cross_entropy(y_vec, y_pred)
+        loss = binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg)
         # Update weights
-        model.backward(y_vec, learning_rate)
+        model.backward(y_vec, learning_rate, w_pos=w_pos, w_neg=w_neg)
         
         batch_loss += loss
         # Count correct predictions
@@ -79,7 +85,7 @@ def eval_one_epoch(Xd, yd):
             y_scalar = int(by[j])
             y_vec = np.array([y_scalar])
             y_pred = model.forward(x)
-            total_loss += binary_cross_entropy(y_vec, y_pred)
+            total_loss += binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg)
             if (y_pred > 0.5 and y_scalar == 1) or (y_pred <= 0.5 and y_scalar == 0):
                 total_correct += 1
     avg_loss = total_loss / len(Xd)
