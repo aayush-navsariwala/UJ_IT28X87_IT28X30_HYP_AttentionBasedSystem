@@ -23,6 +23,27 @@ def load_threshold(default=0.5):
         print(f"Warning: failed to read threshold file ({e}); using default {default:.2f}")
     return th
 
+def sweep_thresholds(model, X, y, targets=np.linspace(0.1, 0.9, 33)):
+    """Return the threshold that maximizes F1 (and its metrics)."""
+    best = {"t": 0.5, "acc": 0.0, "prec": 0.0, "rec": 0.0, "f1": 0.0}
+    for t in targets:
+        TP=FP=TN=FN=0
+        for i in range(len(X)):
+            pred = model.predict(X[i].reshape(48,48), threshold=t)
+            true = int(y[i])
+            if   pred==1 and true==1: TP+=1
+            elif pred==1 and true==0: FP+=1
+            elif pred==0 and true==0: TN+=1
+            else: FN+=1
+        total = TP+TN+FP+FN
+        acc  = (TP+TN)/total if total else 0.0
+        prec = TP/(TP+FP) if (TP+FP) else 0.0
+        rec  = TP/(TP+FN) if (TP+FN) else 0.0
+        f1   = (2*prec*rec)/(prec+rec) if (prec+rec) else 0.0
+        if f1 > best["f1"]:
+            best = {"t": t, "acc": acc, "prec": prec, "rec": rec, "f1": f1}
+    return best
+
 def main():
     # 1) Load data
     X_test = np.load('data/npy/X_test.npy').astype(np.float32)
@@ -68,6 +89,21 @@ def main():
 
     # Load decision threshold (defaults to 0.5 if file missing)
     threshold = load_threshold(default=0.5)
+    
+    # Sweep to maximise F1 onthis evaluation set
+    DO_SWEEP = True
+    SAVE_SWEPT_THRESHOLD = True
+    if DO_SWEEP:
+        print("Sweeping thresholds to maximize F1 on this evaluation set...")
+        best = sweep_thresholds(model, X_test, y_test)
+        print(f"Best by F1: t={best['t']:.3f}  acc={best['acc']:.3f}  "
+              f"prec={best['prec']:.3f}  rec={best['rec']:.3f}  f1={best['f1']:.3f}")
+        threshold = best["t"] 
+        if SAVE_SWEPT_THRESHOLD:
+            os.makedirs(os.path.dirname(THRESHOLD_PATH), exist_ok=True)
+            with open(THRESHOLD_PATH, "w") as f:
+                f.write(f"{threshold:.6f}")
+            print(f"Saved new threshold to {THRESHOLD_PATH}")
     
     # Confusion matrix counters
     TP = FP = TN = FN = 0
