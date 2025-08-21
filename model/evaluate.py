@@ -24,7 +24,7 @@ def load_threshold(default=0.5):
     return th
 
 def main():
-    # Load data
+    # 1) Load data
     X_test = np.load('data/npy/X_test.npy').astype(np.float32)
     y_test = np.load('data/npy/y_test.npy').astype(np.int32).reshape(-1)
 
@@ -38,6 +38,7 @@ def main():
     if MAX_SAMPLES is not None:
         pos_idx = np.where(y_test == 1)[0]
         neg_idx = np.where(y_test == 0)[0]
+        
         rng.shuffle(pos_idx)
         rng.shuffle(neg_idx)
         
@@ -46,7 +47,7 @@ def main():
         take_neg = min(per_class, len(neg_idx))
         sel = np.concatenate([pos_idx[:take_pos], neg_idx[:take_neg]])
         rng.shuffle(sel)
-
+        
         X_test = X_test[sel]
         y_test = y_test[sel]
         
@@ -55,15 +56,15 @@ def main():
     n_neg = int((y_test == 0).sum())
     print(f"Class distribution in evaluation set → positives={n_pos}, negatives={n_neg}")
     if n_pos == 0 or n_neg == 0:
-        print("One class is missing so metrics will be misleading.")
+        print("One class is missing; metrics will be misleading for precision/recall/F1.")
 
     # Init model (and optionally load trained weights)
-        model = SimpleCNN()
+    model = SimpleCNN()  
     if WEIGHTS_PATH and os.path.exists(WEIGHTS_PATH):
         model.load_weights(WEIGHTS_PATH)
         print(f"Loaded weights from {WEIGHTS_PATH}")
     else:
-        print(f"Warning: weights file not found at {WEIGHTS_PATH}. Evaluating with random weights.")
+        print(f"Weights not found at {WEIGHTS_PATH}. Evaluating with random weights.")
 
     # Load decision threshold (defaults to 0.5 if file missing)
     threshold = load_threshold(default=0.5)
