@@ -15,6 +15,7 @@ from collections import deque
 from utils.image_utils import rgb_to_grayscale, resize_image
 from model.cnn import SimpleCNN
 
+# Helpers for thresholding imports
 def load_threshold(default=0.5, path="weights/threshold.txt"):
     t = default
     try:
@@ -28,13 +29,11 @@ def load_threshold(default=0.5, path="weights/threshold.txt"):
 
 def to_model_input_from_bgr(frame_bgr):
     # Convert a BGR frame (OpenCV) to the model's 48x48 grayscale normalized input.
-    # Resize for consistency before grayscale (optional UI size kept separate)
-    # We process from the full-res frame for better fidelity:
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    gray = rgb_to_grayscale(rgb)          # float array, still in 0..255 if input was uint8
-    resized = resize_image(gray, (48, 48))  # nearest-neighbour to 48x48
+    gray = rgb_to_grayscale(rgb)          
+    resized = resize_image(gray, (48, 48))  
 
-    # Normalize once. cv2 returns uint8 0..255; our grayscale returns float but same range.
+    # Normalize once
     if resized.dtype != np.float32:
         resized = resized.astype(np.float32)
     # If values look like 0..255, scale down; if already 0..1, this clip keeps it safe.
@@ -42,13 +41,10 @@ def to_model_input_from_bgr(frame_bgr):
         resized = resized / 255.0
     else:
         resized = np.clip(resized, 0.0, 1.0)
-
     return resized
 
 def rolling_mean(deq):
-    if len(deq) == 0:
-        return 0.0
-    return float(np.mean(deq))
+    return float(np.mean(deq)) if len(deq) else 0.0
 
 # Model initialisation
 model = SimpleCNN()
@@ -70,6 +66,10 @@ history = deque(maxlen=30)
 # Store timestamps
 timestamps = deque(maxlen=30)   
 
+# Short window for smoothing using 5 frames = 25 seconds 
+window_probs = deque(maxlen=5)     
+window_preds = deque(maxlen=5) 
+
 # UI setup
 root = tk.Tk()
 root.title("Teacher Dashboard - Student Attention Monitor")
@@ -87,6 +87,9 @@ status_label.pack(pady=(8, 2))
 
 avg_label = tk.Label(left_frame, text="Rolling avg (last 30): --", font=("Arial", 11))
 avg_label.pack(pady=(0, 10))
+
+prob_label = tk.Label(left_frame, text="Prob: -- | Smoothed: --", font=("Arial", 10))
+prob_label.pack(pady=(0, 10))
 
 # Right side logs and chart
 right_frame = tk.Frame(root)
@@ -127,36 +130,46 @@ def update():
         root.after(1000, update)
         return
     
-    # Prepare the model input
+    # Model input & inference
     model_input = to_model_input_from_bgr(frame)
+    # Get raw probability (not thresholded)
+    prob = float(model.forward(model_input).squeeze())
+    raw_pred = 1 if prob > threshold else 0
     
-    # Predict with tuned threshold
-    pred = model.predict(model_input, threshold=threshold)
-    status_text = "Attentive ✅" if pred == 1 else "Inattentive ⚠️"
+    # Update smoothing windows
+    window_probs.append(prob)
+    window_preds.append(raw_pred)
+    
+    # Smoothed probability & prediction
+    sm_prob = rolling_mean(window_probs)
+    sm_pred = 1 if sm_prob > threshold else 0
+    
+    # Update UI text
     now = time.strftime("%H:%M:%S")
+    status_text = "Attentive ✅" if sm_pred == 1 else "Inattentive ⚠️"
+    prob_label.config(text=f"Prob: {prob:.3f} | Smoothed: {sm_prob:.3f}")
+    status_label.config(text=f"Status: {status_text}")
     
-    # Update the state
-    history.append(pred)
+    # Append to plotted history (smoothed)
+    history.append(sm_pred)
     timestamps.append(now)
     
-    # Update the log
+    # Update log
     log_box.insert(tk.END, f"[{now}] {status_text}\n")
     log_box.see(tk.END)
     
-    # Update the rolling average label
+    # Update rolling average label (over the plotted history window)
     avg = rolling_mean(history)
     avg_label.config(text=f"Rolling avg (last {len(history)}): {avg:.2f}")
     
-    # Update status label
-    status_label.config(text=f"Status: {status_text}")
-    
-    # Update the graph
+    # Update graph (plot smoothed predictions)
     ax.clear()
-    ax.plot(timestamps, history, marker='o', linestyle='-')
+    ax.plot(list(range(len(history))), list(history), marker='o', linestyle='-')
     ax.set_ylim(-0.2, 1.2)
     ax.set_ylabel("Attention")
-    ax.set_xticklabels(timestamps, rotation=45, ha='right')
     ax.set_title("Student Attention Over Time")
+    ax.set_xticks(range(len(timestamps)))
+    ax.set_xticklabels(list(timestamps), rotation=45, ha='right')
     canvas.draw()
     
     # Show live video scaled for the UI
@@ -169,44 +182,6 @@ def update():
     
     # schedule next capture (every 5s)
     root.after(5000, update)
-    
-    # # Resize the captured frame for display and processing
-    # frame = cv2.resize(frame, (200, 200))
-    # rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    # # Grayscaling, resizing and normalise
-    # gray = rgb_to_grayscale(rgb)
-    # resized = resize_image(gray, (48, 48))
-    # img = resized / 255.0
-    
-    # # Prediction model
-    # pred = model.predict(img)
-    # status = "Attentive ✅" if pred == 1 else "Inattentive ⚠️"
-    # timestamp = time.strftime("%H:%M:%S")
-    
-    # # Update the log and history
-    # history.append(pred)
-    # timestamps.append(timestamp)
-    # log_box.insert(tk.END, f"[{timestamp}] {status}\n")
-    # log_box.see(tk.END)
-    
-    # # Update the graph with new values
-    # ax.clear()
-    # ax.plot(timestamps, history, marker='o', color='green' if pred else 'red')
-    # ax.set_ylim(-0.2, 1.2)
-    # ax.set_ylabel("Attention")
-    # ax.set_xticklabels(timestamps, rotation=45, ha='right')
-    # ax.set_title("Student Attention Over Time")
-    # canvas.draw()
-    
-    # # Display the video in the UI
-    # img_pil = Image.fromarray(rgb)
-    # imgtk = ImageTk.PhotoImage(image=img_pil)
-    # video_label.imgtk = imgtk
-    # video_label.configure(image=imgtk)
-    
-    # # Schedule update every 5 seconds
-    # root.after(5000, update)
     
 # Start the main loop
 update()

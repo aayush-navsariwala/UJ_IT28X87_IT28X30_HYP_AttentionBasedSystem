@@ -24,7 +24,7 @@ def load_threshold(default=0.5):
     return th
 
 def sweep_thresholds(model, X, y, targets=np.linspace(0.1, 0.9, 33)):
-    """Return the threshold that maximizes F1 (and its metrics)."""
+    # Return the threshold that maximizes F1 and its metrics
     best = {"t": 0.5, "acc": 0.0, "prec": 0.0, "rec": 0.0, "f1": 0.0}
     for t in targets:
         TP=FP=TN=FN=0
