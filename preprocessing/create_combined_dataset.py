@@ -13,77 +13,111 @@ COMBINED_PATH = 'data/combined'
 
 # Specifying the image size
 IMAGE_SIZE = (48, 48)
+TRAIN_RATIO = 0.8
+CLEAN_DEST = True
+BALANCE_CLASSES = True
+MAX_PER_CLASS = None
+SEED = 42
 
-# Split the ratio between 80% to train and 20% to test the model
-SPLIT_RATIO = 0.8 
+VALID_EXTS = ('.jpg', '.jpeg', '.png')
 
-# Function to collect image paths from a label folder
-def collect_images(source_folder, label_name):
-    full_paths = []
-    label_folder = os.path.join(source_folder, label_name)
+def ensure_clean_dir(path, clean=True):
+    if clean and os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path, exist_ok=True)
     
-    # Loop through all image files in the folder
-    for file in os.listdir(label_folder):
-        if file.lower().endswith('.jpg') or file.lower().endswith('.png'):
-            full_paths.append((os.path.join(label_folder, file), label_name))
-    return full_paths
+def collect_images_flat(folder):
+    # Return absolute file paths for images directly inside folder
+    if not os.path.isdir(folder):
+        return []
+    return [os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.lower().endswith(VALID_EXTS)]
 
-# Function to load, process and save an image
-def save_image(image_path, dest_folder, prefix):
+def load_class_paths():
+    # FER-2013 dataset
+    fer_att = collect_images_flat(os.path.join(FER_TRAIN_PATH, 'attentive'))
+    fer_inatt = collect_images_flat(os.path.join(FER_TRAIN_PATH, 'inattentive'))
+    
+    # DriveGaze dataset
+    dg_att = collect_images_flat(os.path.join(DRIVEGAZE_PATH, 'attentive'))
+    dg_inatt = collect_images_flat(os.path.join(DRIVEGAZE_PATH, 'inattentive'))
+    
+    # Merge sources
+    att = fer_att + dg_att
+    inatt = fer_inatt + dg_inatt
+    
+    return att, inatt
+
+def maybe_cap(paths, cap):
+    if cap is None or cap <= 0:
+        return paths
+    return paths[:cap]
+
+def stratified_split(paths, train_ratio):
+    # Deterministic split for a single class
+    n = len(paths)
+    split = int(n * train_ratio)
+    return paths[:split], paths[split:]
+
+def save_image(img_path, dest_folder, prefix):
     try:
-        # Load the image, convert to grayscale, resize to 48x48 and normalise to [0, 1]
-        img = load_and_process_image(image_path)
-        
-        # Scale pixel values back to [0, 255]
-        img = (img * 255).astype(np.uint8)
-        
-        # Generate a new filename with a prefix to prevent duplicates
-        filename = prefix + "_" + os.path.basename(image_path)
-        
-        # Create the full path to save the image
+        img = load_and_process_image(img_path, size=IMAGE_SIZE)
+        img_u8 = (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
+        filename = f"{prefix}_" + os.path.basename(img_path)
         full_path = os.path.join(dest_folder, filename)
-        
-        # Save the image using matplotlib with a grayscale colour map
-        plt.imsave(full_path, img, cmap='gray')
+        plt.imsave(full_path, img_u8, cmap='gray')
     except Exception as e:
-        # Error handling if processing or saving fails
-        print(f"Failed to save {image_path}: {e}")
+        print(f"Failed to save {img_path}: {e}")
 
 def main():
-    # Get all image paths from FER-2013 and DriveGaze
-    attentive = collect_images(FER_TRAIN_PATH, 'attentive') + collect_images(DRIVEGAZE_PATH, 'attentive')
-    inattentive = collect_images(FER_TRAIN_PATH, 'inattentive') + collect_images(DRIVEGAZE_PATH, 'inattentive')
+    random.seed(SEED)
+    np.random.seed(SEED)
     
-    # Shuffle the order of the dataset to mix up data
-    random.shuffle(attentive)
-    random.shuffle(inattentive)
+    # Load all candidate files filtered by DriveGaze extractor
+    att_all, inatt_all = load_class_paths()
+    print(f"Found attentive: {len(att_all)}")
+    print(f"Found inattentive: {len(inatt_all)}")
     
-    # Split into train and test
-    def split_data(data_list):
-        split_point = int(len(data_list) * SPLIT_RATIO)
-        return data_list[:split_point], data_list[split_point:]
+    # Shuffle 
+    random.shuffle(att_all)
+    random.shuffle(inatt_all)
     
-    att_train, att_test = split_data(attentive)
-    inatt_train, inatt_test = split_data(inattentive)
+    # Optional cap per class before balancing
+    att_all = maybe_cap(att_all, MAX_PER_CLASS)
+    inatt_all = maybe_cap(inatt_all, MAX_PER_CLASS)
     
-    # Define the output folders
-    folders = ['train/attentive', 'train/inattentive',
-               'test/attentive', 'test/inattentive']
-    
-    for f in folders:
-        os.makedirs(os.path.join(COMBINED_PATH, f), exist_ok=True)
+    # Balance classes by downsampling majority
+    if BALANCE_CLASSES:
+        n = min(len(att_all), len(inatt_all))
+        att_all = att_all[:n]
+        inatt_all = inatt_all[:n]
+        print(f"Balanced to {n} per class.")
         
-    # Save all of the images
-    for i, (img_path, _) in enumerate(att_train):
-        save_image(img_path, os.path.join(COMBINED_PATH, 'train/attentive'), f'att_{i}')
-    for i, (img_path, _) in enumerate(att_test):
-        save_image(img_path, os.path.join(COMBINED_PATH, 'test/attentive'), f'att_{i}')
-    for i, (img_path, _) in enumerate(inatt_train):
-        save_image(img_path, os.path.join(COMBINED_PATH, 'train/inattentive'), f'inatt_{i}')
-    for i, (img_path, _) in enumerate(inatt_test):
-        save_image(img_path, os.path.join(COMBINED_PATH, 'test/inattentive'), f'inatt_{i}')
+    # Stratified split per class
+    att_train, att_test = stratified_split(att_all, TRAIN_RATIO)
+    inatt_train, inatt_test = stratified_split(inatt_all, TRAIN_RATIO)
+    
+    print(f"Train counts → attentive: {len(att_train)}, inattentive: {len(inatt_train)}")
+    print(f"Test  counts → attentive: {len(att_test)},  inattentive: {len(inatt_test)}")
+    
+    # Prepare destination folders
+    if CLEAN_DEST:
+        ensure_clean_dir(COMBINED_PATH, clean=True)
+    for sub in ['train/attentive','train/inattentive','test/attentive','test/inattentive']:
+        os.makedirs(os.path.join(COMBINED_PATH, sub), exist_ok=True)
         
-    print("Combined dataset created at 'data/combined/'")
+    # Save the images
+    for i, p in enumerate(att_train):
+        save_image(p, os.path.join(COMBINED_PATH, 'train/attentive'),   f'att_{i}')
+    for i, p in enumerate(inatt_train):
+        save_image(p, os.path.join(COMBINED_PATH, 'train/inattentive'), f'inatt_{i}')
+    for i, p in enumerate(att_test):
+        save_image(p, os.path.join(COMBINED_PATH, 'test/attentive'),    f'att_{i}')
+    for i, p in enumerate(inatt_test):
+        save_image(p, os.path.join(COMBINED_PATH, 'test/inattentive'),  f'inatt_{i}')
+        
+    print("✅ Combined dataset created at 'data/combined/'")    
     
 if __name__ == "__main__":
     main()
