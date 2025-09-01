@@ -3,6 +3,8 @@ import shutil
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.image_utils import load_and_process_image
 
 # Specify the paths
