@@ -5,19 +5,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils.image_utils import load_and_process_image
 
-
 # Specify the paths
 FER_TRAIN_PATH = 'data/processed/train'
 DRIVEGAZE_PATH = 'data/drivegaze'
 COMBINED_PATH = 'data/combined'
 
 # Specifying the image size
-IMAGE_SIZE = (48, 48)
-TRAIN_RATIO = 0.8
-CLEAN_DEST = True
-BALANCE_CLASSES = True
-MAX_PER_CLASS = None
-SEED = 42
+IMAGE_SIZE      = (48, 48)
+TRAIN_RATIO     = 0.8                        
+CLEAN_DEST      = True                       
+BALANCE_CLASSES = True                       
+MAX_PER_CLASS   = None                       
+SEED            = 42
 
 VALID_EXTS = ('.jpg', '.jpeg', '.png')
 

@@ -2,7 +2,10 @@ import os
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.image_utils import load_and_process_image
+
 
 # Path to the DriveGaze dataset folder on local machine
 SOURCE_DIR = r'C:\Users\aayus\Desktop\UJ\Year Project\HYP\drivegaze\DriveGaze\frame'
