@@ -12,7 +12,8 @@ from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
-from utils.image_utils import rgb_to_grayscale, resize_image
+
+from utils.image_utils import to_model_input_from_bgr
 from model.cnn import SimpleCNN
 
 # Helpers for thresholding imports
@@ -27,37 +28,29 @@ def load_threshold(default=0.5, path="weights/threshold.txt"):
         print(f"[Warn] Failed to read threshold from {path}: {e}. Using default={default}.")
     return t
 
-def to_model_input_from_bgr(frame_bgr):
-    # Convert a BGR frame (OpenCV) to the model's 48x48 grayscale normalized input.
-    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    gray = rgb_to_grayscale(rgb)          
-    resized = resize_image(gray, (48, 48))  
-
-    # Normalize once
-    if resized.dtype != np.float32:
-        resized = resized.astype(np.float32)
-    # If values look like 0..255, scale down; if already 0..1, this clip keeps it safe.
-    if resized.max() > 1.0:
-        resized = resized / 255.0
-    else:
-        resized = np.clip(resized, 0.0, 1.0)
-    return resized
-
 def rolling_mean(deq):
     return float(np.mean(deq)) if len(deq) else 0.0
 
-# Model initialisation
 model = SimpleCNN()
 
-# Load trained weights
-weights_path = "weights/best.npz"
+# Prefer your existing weights path; keep it configurable
+weights_path = "weights/best.npz"  # or e.g. "model/weights/cnn_weights.npz"
 if os.path.exists(weights_path):
-    model.load_weights(weights_path)
-    print(f"[OK] Loaded weights from {weights_path}")
+    try:
+        # If you implemented .load(path) as suggested
+        model.load(weights_path)            # noqa: calls our suggested API
+        print(f"[OK] Loaded weights via model.load() from {weights_path}")
+    except AttributeError:
+        # Fall back to your original API if it exists
+        if hasattr(model, "load_weights"):
+            model.load_weights(weights_path)
+            print(f"[OK] Loaded weights via model.load_weights() from {weights_path}")
+        else:
+            print(f"[Warn] Model has no load/load_weights method. Running with random weights.")
 else:
     print(f"[Warn] Weights not found at {weights_path}. Running with random weights.")
-    
-# Load tuned threshold
+
+# Tuned decision threshold
 threshold = load_threshold(default=0.5, path="weights/threshold.txt")
 print(f"[Info] Using decision threshold={threshold:.3f}")
 
