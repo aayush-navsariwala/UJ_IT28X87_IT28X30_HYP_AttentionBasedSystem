@@ -6,12 +6,10 @@ from cnn import SimpleCNN, binary_cross_entropy
 
 # Configuration for training
 np.random.seed(42)
-# Starting training with Stage 1 of 5000 dataset for debugging
-subset_size = 5000
-learning_rate = 0.01
+subset_size = 5000           
+learning_rate = 0.001       
 epochs = 3
 batch_size = 32
-# Using 10% of the subset for validation
 val_ratio = 0.10
 early_stopping_patience = 2
 weights_path = "weights/best.npz"
@@ -54,10 +52,14 @@ def stratified_split(Xb, yb, val_ratio=0.10):
     return Xb[tr_sel], yb[tr_sel], Xb[val_sel], yb[val_sel]
 
 # Load preprocessed training data 
-X_all = np.load('data/npy/X_train.npy')
+X_all = np.load('data/npy/X_train.npy').astype(np.float32)
 y_all = np.load('data/npy/y_train.npy')
 
-# Creating a balanced subset and stratifying split
+# Guard to ensure inputs are [0,1]
+if X_all.max() > 1.5:  
+    X_all /= 255.0
+
+# Create balanced subset & stratified split
 Xb, yb = build_balanced_subset(X_all, y_all, subset_size=subset_size)
 X_tr, y_tr, X_val, y_val = stratified_split(Xb, yb, val_ratio=val_ratio)
 
@@ -68,7 +70,7 @@ print(f"Val counts -> pos:{int(np.sum(y_val))} neg:{len(y_val) - int(np.sum(y_va
 # Class weights computed on train only
 pos = int(np.sum(y_tr))
 neg = int(len(y_tr) - pos)
-w_pos = (neg / max(1, pos))  # inverse frequency
+w_pos = (neg / max(1, pos))  
 w_neg = 1.0
 print(f"class weights -> w_pos:{w_pos:.3f} w_neg:{w_neg:.3f}")
 
@@ -97,9 +99,11 @@ def train_one_batch(batch_x, batch_y):
         # Update weights
         model.backward(y_vec, learning_rate, w_pos=w_pos, w_neg=w_neg)
         
-        batch_loss += loss
+        batch_loss += float(loss)
+        
         # Count correct predictions
-        if (y_pred > 0.5 and y_scalar == 1) or (y_pred <= 0.5 and y_scalar == 0):
+        prob = float(y_pred.squeeze())
+        if (prob > 0.5 and y_scalar == 1) or (prob <= 0.5 and y_scalar == 0):
             correct += 1
     
     # Return average loss and correct predictions
@@ -118,10 +122,14 @@ def eval_one_epoch(Xd, yd):
             x = bx[j].reshape(48, 48)
             y_scalar = int(np.asarray(by[j]).reshape(-1)[0])
             y_vec = np.array([y_scalar], dtype=np.float32)
+            
             y_pred = model.forward(x)
-            total_loss += binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg)
-            if (y_pred > 0.5 and y_scalar == 1) or (y_pred <= 0.5 and y_scalar == 0):
+            total_loss += float(binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg))
+            
+            prob = float(y_pred.squeeze())
+            if (prob > 0.5 and y_scalar == 1) or (prob <= 0.5 and y_scalar == 0):
                 total_correct += 1
+                
     avg_loss = total_loss / len(Xd)
     acc = total_correct / len(Xd)
     return avg_loss, acc
@@ -133,7 +141,7 @@ def find_best_threshold(Xv, yv, thresholds=np.linspace(0.05, 0.95, 37)):
         for i in range(len(Xv)):
             x = Xv[i].reshape(48, 48)
             y_true = int(np.asarray(yv[i]).reshape(-1)[0])
-            pred = model.predict(x, threshold=t) 
+            pred = model.predict(x, threshold=t)
             if y_true==1 and pred==1: TP+=1
             elif y_true==0 and pred==1: FP+=1
             elif y_true==0 and pred==0: TN+=1
@@ -162,7 +170,7 @@ def train_model():
         writer.writerow(["Epoch", "TrainLoss", "TrainAccuracy", "ValLoss", "ValAcc"])
 
         for epoch in range(1, epochs + 1):
-            # Shuffle training split for each epoch
+            # Shuffle train split for each epoch
             idx = np.arange(len(X_tr))
             np.random.shuffle(idx)
             Xs, ys = X_tr[idx], y_tr[idx]
