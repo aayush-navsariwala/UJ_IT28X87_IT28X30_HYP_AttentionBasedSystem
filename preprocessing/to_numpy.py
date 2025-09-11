@@ -18,7 +18,7 @@ def load_images_from_folder(folder_path, label):
             continue
         img_path = os.path.join(folder_path, filename)
         try:
-            img = load_and_process_image(img_path)  
+            img = load_and_process_image(img_path)
             images.append(img)
             labels.append(label)
         except Exception as e:
@@ -36,15 +36,17 @@ def prepare_dataset(split):
     X = np.asarray(X_list, dtype=np.float32).reshape(-1, 48, 48)
     y = np.asarray(y_list, dtype=np.int32)
 
+    # Sanity checks
     if np.isnan(X).any() or np.isinf(X).any():
         raise ValueError(f"[fatal] Found NaN/Inf in X for split={split}")
     if X.size > 0 and (X.min() < -1e-6 or X.max() > 1.0 + 1e-6):
         print(f"[warn] X not in [0,1]? min={X.min():.3f} max={X.max():.3f} (split={split})")
 
     rng = np.random.default_rng(SEED)
-    idx = rng.permutation(len(y)) if len(y) > 0 else np.array([], dtype=np.int64)
-    X = np.ascontiguousarray(X[idx]) if len(y) > 0 else X
-    y = y[idx] if len(y) > 0 else y
+    if len(y) > 0:
+        idx = rng.permutation(len(y))
+        X = np.ascontiguousarray(X[idx])  
+        y = y[idx]
 
     pos = int((y == 1).sum()); neg = int((y == 0).sum())
     print(f"[{split}] total={len(y)} | att={pos} | inatt={neg}")
@@ -73,11 +75,15 @@ def main():
         np.save('data/npy/y_val.npy', y_val)
 
     # Summary
-    print(f"Saved: train={len(X_train)} | test={len(X_test)}"
-          + (f" | val={len(X_val)}" if has_val else ""))
-    print(f"Shapes: X_train={X_train.shape}, y_train={y_train.shape}, "
-          f"X_test={X_test.shape}, y_test={y_test.shape}"
-          + (f", X_val={X_val.shape}, y_val={y_val.shape}" if has_val else ""))
+    print(
+        f"Saved: train={len(X_train)} | test={len(X_test)}"
+        + (f" | val={len(X_val)}" if has_val else "")
+    )
+    print(
+        f"Shapes: X_train={X_train.shape}, y_train={y_train.shape}, "
+        f"X_test={X_test.shape}, y_test={y_test.shape}"
+        + (f", X_val={X_val.shape}, y_val={y_val.shape}" if has_val else "")
+    )
     
 # Entry point to execute the script
 if __name__ == "__main__":
