@@ -161,7 +161,27 @@ def update():
     if USE_FACE_CROP:
         frame_roi, found_face = get_face_roi(frame)
     else:
-        frame_roi, found_face = frame, True  
+        frame_roi, found_face = frame, True 
+        
+    if not found_face:
+        # Update UI to show no face detected
+        status_label.config(text="No face detected 🚫")
+        prob_label.config(text="Prob: -- | Smoothed: -- | Thr: --")
+        avg_label.config(text="Rolling avg (last 30): --")
+
+        log_box.insert(tk.END, f"[{now}] No face detected; skipping classification\n")
+        log_box.see(tk.END)
+
+        # Show the raw camera feed (without ROI box)
+        display_frame = cv2.resize(frame, (360, 270))
+        display_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(display_rgb)
+        imgtk = ImageTk.PhotoImage(image=img_pil)
+        video_label.imgtk = imgtk
+        video_label.configure(image=imgtk)
+
+        root.after(5000, update)
+        return
 
     # Preprocess to training-identical tensor (48x48, float32, [0,1])
     x = to_model_input_from_bgr(frame_roi)
@@ -185,8 +205,8 @@ def update():
     current_thr = threshold
     raw_pred = 1 if y_prob > current_thr else 0
     
-    # Smoothing: update ONLY if we have a valid face ROI + lighting
-    if found_face and valid_lighting:
+    # Only smooth if valid lighting
+    if valid_lighting:
         window_probs.append(y_prob)
         window_preds.append(raw_pred)
 
@@ -200,24 +220,40 @@ def update():
     status_label.config(text=f"RAW: {raw_text} | SMOOTHED: {sm_text}")
     prob_label.config(text=f"Prob: {y_prob:.3f} | Smoothed: {sm_prob:.3f} | Thr: {current_thr:.2f}")
     
-    # Debug log (face flag, ROI size, validity, weights, logit)
-    roi_h, roi_w = frame_roi.shape[:2]
-    dbg_face = "Y" if found_face else "N"
-    dbg_valid = "Y" if valid_lighting else "N"
-    dbg_logit = f"{y_logit:.3f}" if y_logit is not None else "N/A"
+    # Update history & chart
+    history.append(sm_pred)
+    timestamps.append(now)
+    avg = rolling_mean(history)
+    avg_label.config(text=f"Rolling avg (last {len(history)}): {avg:.2f}")
+    
     log_box.insert(
         tk.END,
         (f"[{now}] RAW={raw_text}, SMOOTHED={sm_text} | "
          f"prob={y_prob:.3f} (thr={current_thr:.2f}) | "
          f"x[min/mean/max]={x_min:.3f}/{x_mean:.3f}/{x_max:.3f} | "
-         f"face={dbg_face} roi={roi_w}x{roi_h} valid={dbg_valid} | "
-         f"weights_loaded={weights_loaded} | logit={dbg_logit}\n")
+         f"face=Y roi={frame_roi.shape[1]}x{frame_roi.shape[0]} valid={'Y' if valid_lighting else 'N'} "
+         f"| weights_loaded={weights_loaded} | logit={y_logit if y_logit is not None else 'N/A'}\n")
     )
     log_box.see(tk.END)
     
-    # Rolling average label (over plotted history window)
-    avg = rolling_mean(history)
-    avg_label.config(text=f"Rolling avg (last {len(history)}): {avg:.2f}")
+    # # Debug log (face flag, ROI size, validity, weights, logit)
+    # roi_h, roi_w = frame_roi.shape[:2]
+    # dbg_face = "Y" if found_face else "N"
+    # dbg_valid = "Y" if valid_lighting else "N"
+    # dbg_logit = f"{y_logit:.3f}" if y_logit is not None else "N/A"
+    # log_box.insert(
+    #     tk.END,
+    #     (f"[{now}] RAW={raw_text}, SMOOTHED={sm_text} | "
+    #      f"prob={y_prob:.3f} (thr={current_thr:.2f}) | "
+    #      f"x[min/mean/max]={x_min:.3f}/{x_mean:.3f}/{x_max:.3f} | "
+    #      f"face={dbg_face} roi={roi_w}x{roi_h} valid={dbg_valid} | "
+    #      f"weights_loaded={weights_loaded} | logit={dbg_logit}\n")
+    # )
+    # log_box.see(tk.END)
+    
+    # # Rolling average label (over plotted history window)
+    # avg = rolling_mean(history)
+    # avg_label.config(text=f"Rolling avg (last {len(history)}): {avg:.2f}")
 
     # Redraw chart
     ax.clear()
@@ -231,15 +267,14 @@ def update():
 
     # Show live video preview (draw face box if used)
     display = frame.copy()
-    if USE_FACE_CROP and face_cascade is not None:
-        gray_for_det = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray_for_det, scaleFactor=1.2, minNeighbors=5, minSize=(60, 60))
-        if len(faces) > 0:
-            x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
-            pad = int(0.15 * max(w, h))
-            x1 = max(0, x - pad); y1 = max(0, y - pad)
-            x2 = min(frame.shape[1], x + w + pad); y2 = min(frame.shape[0], y + h + pad)
-            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    gray_for_det = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray_for_det, scaleFactor=1.2, minNeighbors=5, minSize=(60, 60))
+    if len(faces) > 0:
+        x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+        pad = int(0.15 * max(w, h))
+        x1 = max(0, x - pad); y1 = max(0, y - pad)
+        x2 = min(frame.shape[1], x + w + pad); y2 = min(frame.shape[0], y + h + pad)
+        cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
     display_frame = cv2.resize(display, (360, 270))
     display_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
