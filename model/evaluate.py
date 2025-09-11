@@ -48,6 +48,10 @@ def main():
     # 1) Load data
     X_test = np.load('data/npy/X_test.npy').astype(np.float32)
     y_test = np.load('data/npy/y_test.npy').astype(np.int32).reshape(-1)
+    
+    # Guard to ensure [0, 1]
+    if X_test.max() > 1.5:
+        X_test /= 255.0
 
     # Shuffle the test set first
     rng = np.random.default_rng(42)
@@ -59,16 +63,12 @@ def main():
     if MAX_SAMPLES is not None:
         pos_idx = np.where(y_test == 1)[0]
         neg_idx = np.where(y_test == 0)[0]
-        
-        rng.shuffle(pos_idx)
-        rng.shuffle(neg_idx)
-        
+        rng.shuffle(pos_idx); rng.shuffle(neg_idx)
         per_class = MAX_SAMPLES // 2
         take_pos = min(per_class, len(pos_idx))
         take_neg = min(per_class, len(neg_idx))
         sel = np.concatenate([pos_idx[:take_pos], neg_idx[:take_neg]])
         rng.shuffle(sel)
-        
         X_test = X_test[sel]
         y_test = y_test[sel]
         
@@ -77,54 +77,59 @@ def main():
     n_neg = int((y_test == 0).sum())
     print(f"Class distribution in evaluation set → positives={n_pos}, negatives={n_neg}")
     if n_pos == 0 or n_neg == 0:
-        print("One class is missing; metrics will be misleading for precision/recall/F1.")
+        print("One class is missing; precision/recall/F1 will be misleading.")
 
-    # Init model (and optionally load trained weights)
-    model = SimpleCNN()  
+    # Initialise model and load trained weights
+    model = SimpleCNN()
     if WEIGHTS_PATH and os.path.exists(WEIGHTS_PATH):
         model.load_weights(WEIGHTS_PATH)
         print(f"Loaded weights from {WEIGHTS_PATH}")
     else:
         print(f"Weights not found at {WEIGHTS_PATH}. Evaluating with random weights.")
 
-    # Load decision threshold (defaults to 0.5 if file missing)
+    # Load decision threshold which defaults to 0.5 if the file is missing
     threshold = load_threshold(default=0.5)
     
     # Sweep to maximise F1 onthis evaluation set
-    DO_SWEEP = True
-    SAVE_SWEPT_THRESHOLD = True
+    DO_SWEEP = False            
+    SAVE_SWEPT_THRESHOLD = False
     if DO_SWEEP:
-        print("Sweeping thresholds to maximize F1 on this evaluation set...")
+        print("WARNING: Sweeping thresholds on the TEST set (data leakage).")
         best = sweep_thresholds(model, X_test, y_test)
         print(f"Best by F1: t={best['t']:.3f}  acc={best['acc']:.3f}  "
               f"prec={best['prec']:.3f}  rec={best['rec']:.3f}  f1={best['f1']:.3f}")
-        threshold = best["t"] 
+        threshold = best["t"]
         if SAVE_SWEPT_THRESHOLD:
             os.makedirs(os.path.dirname(THRESHOLD_PATH), exist_ok=True)
             with open(THRESHOLD_PATH, "w") as f:
                 f.write(f"{threshold:.6f}")
             print(f"Saved new threshold to {THRESHOLD_PATH}")
     
-    # Confusion matrix counters
+    # Confusion matrix counters and class probability diagnostics
     TP = FP = TN = FN = 0
+    prob_pos = []
+    prob_neg = []
 
     # Evaluate with a progress bar
     for i in tqdm(range(len(X_test)), desc="Evaluating"):
         x = X_test[i].reshape(48, 48)
         y_true = int(y_test[i])
+        
+        # Raw probability for diagnostics
+        prob = float(model.forward(x).squeeze())
+        if y_true == 1:
+            prob_pos.append(prob)
+        else:
+            prob_neg.append(prob)
 
-        # Use the tuned threshold in predict()
-        y_pred = model.predict(x, threshold=threshold)
+        # Threshold prediction
+        y_pred = 1 if prob > threshold else 0
 
         # Update confusion counts
-        if y_true == 1 and y_pred == 1:
-            TP += 1
-        elif y_true == 0 and y_pred == 1:
-            FP += 1
-        elif y_true == 0 and y_pred == 0:
-            TN += 1
-        elif y_true == 1 and y_pred == 0:
-            FN += 1
+        if y_true == 1 and y_pred == 1: TP += 1
+        elif y_true == 0 and y_pred == 1: FP += 1
+        elif y_true == 0 and y_pred == 0: TN += 1
+        elif y_true == 1 and y_pred == 0: FN += 1
 
     # Metrics
     accuracy  = safe_div(TP + TN, TP + TN + FP + FN)
@@ -141,6 +146,12 @@ def main():
     print(f"Recall       : {recall:.4f}")
     print(f"F1 Score     : {f1_score:.4f}")
     print(f"TP={TP} FP={FP} TN={TN} FN={FN}")
+    
+    # Extra diagnostics
+    if prob_pos:
+        print(f"Mean prob(attentive|true=1) = {np.mean(prob_pos):.3f}")
+    if prob_neg:
+        print(f"Mean prob(attentive|true=0) = {np.mean(prob_neg):.3f}")
 
     # Save log
     os.makedirs("logs", exist_ok=True)
@@ -152,6 +163,10 @@ def main():
         f.write(f"recall={recall:.6f}\n")
         f.write(f"f1_score={f1_score:.6f}\n")
         f.write(f"TP={TP} FP={FP} TN={TN} FN={FN}\n")
+        if prob_pos:
+            f.write(f"mean_prob_pos={np.mean(prob_pos):.6f}\n")
+        if prob_neg:
+            f.write(f"mean_prob_neg={np.mean(prob_neg):.6f}\n")
 
 if __name__ == "__main__":
     main()
