@@ -4,65 +4,80 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.image_utils import load_and_process_image
 
-# Loads all images from a specified folder and do various things with them
+SEED = 42
+VALID_EXTS = ('.jpg', '.jpeg', '.png')
+
 def load_images_from_folder(folder_path, label):
-    # List to store processed image arrays
-    images = []
-    # List to store corresponding labels
-    labels = []
+    images, labels = [], []
+    if not os.path.isdir(folder_path):
+        print(f"[warn] missing folder: {folder_path}")
+        return images, labels
+
     for filename in os.listdir(folder_path):
-        # Filter for supported file formats
-        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-            try:
-                # Build full image path
-                img_path = os.path.join(folder_path, filename) 
-                
-                # Load, grayscale, resize and normalise the image
-                img = load_and_process_image(img_path)
-                
-                # Append processed image and label to respective lists
-                images.append(img)
-                labels.append(label)
-            except Exception as e:
-                # Error handling for loading images from dataset
-                print(f"Error loading image {img_path}: {e}")
+        if not filename.lower().endswith(VALID_EXTS):
+            continue
+        img_path = os.path.join(folder_path, filename)
+        try:
+            img = load_and_process_image(img_path)  
+            images.append(img)
+            labels.append(label)
+        except Exception as e:
+            print(f"[err] loading {img_path}: {e}")
     return images, labels
 
-# Prepares either the train or test dataset by loading images from attentive and inattentive folders
 def prepare_dataset(split):
-    base_path = f'data/combined/{split}/'
-    X, y = [], []
-    
-    # Load images and labels for attentive (1) and inattentive (0)
-    attentive_images, attentive_labels = load_images_from_folder(os.path.join(base_path, 'attentive'), 1)
-    inattentive_images, inattentive_labels = load_images_from_folder(os.path.join(base_path, 'inattentive'), 0)
-    
-    # Combine both attentive and inattentive data
-    X.extend(attentive_images + inattentive_images)
-    y.extend(attentive_labels + inattentive_labels)
-    
-    # Convert lists to NumPy arrays
-    X = np.array(X).reshape(-1, 48, 48)
-    y = np.array(y)
+    base_path = os.path.join('data', 'combined', split)
+    att_imgs, att_labels = load_images_from_folder(os.path.join(base_path, 'attentive'), 1)
+    ina_imgs, ina_labels = load_images_from_folder(os.path.join(base_path, 'inattentive'), 0)
+
+    X_list = att_imgs + ina_imgs
+    y_list = att_labels + ina_labels
+
+    X = np.asarray(X_list, dtype=np.float32).reshape(-1, 48, 48)
+    y = np.asarray(y_list, dtype=np.int32)
+
+    if np.isnan(X).any() or np.isinf(X).any():
+        raise ValueError(f"[fatal] Found NaN/Inf in X for split={split}")
+    if X.size > 0 and (X.min() < -1e-6 or X.max() > 1.0 + 1e-6):
+        print(f"[warn] X not in [0,1]? min={X.min():.3f} max={X.max():.3f} (split={split})")
+
+    rng = np.random.default_rng(SEED)
+    idx = rng.permutation(len(y)) if len(y) > 0 else np.array([], dtype=np.int64)
+    X = np.ascontiguousarray(X[idx]) if len(y) > 0 else X
+    y = y[idx] if len(y) > 0 else y
+
+    pos = int((y == 1).sum()); neg = int((y == 0).sum())
+    print(f"[{split}] total={len(y)} | att={pos} | inatt={neg}")
+
     return X, y
 
-# Main function to preprocess both train and test datasets 
 def main():
-    # Create output directory if it does not exist
     os.makedirs('data/npy', exist_ok=True)
-    
-    # Prepare train and test datasets
+
+    # Required splits
     X_train, y_train = prepare_dataset('train')
-    X_test, y_test = prepare_dataset('test')
-    
-    # Save datasets as NumPy binary files
+    X_test,  y_test  = prepare_dataset('test')
+
+    # Optional validation split (if you created data/combined/val)
+    has_val = os.path.isdir(os.path.join('data', 'combined', 'val'))
+    if has_val:
+        X_val, y_val = prepare_dataset('val')
+
+    # Save
     np.save('data/npy/X_train.npy', X_train)
     np.save('data/npy/y_train.npy', y_train)
-    np.save('data/npy/X_test.npy', X_test)
-    np.save('data/npy/y_test.npy', y_test)
-    
-    # Output dataset statistics
-    print(f"Saved: {len(X_train)} training samples and {len(X_test)} test samples")
+    np.save('data/npy/X_test.npy',  X_test)
+    np.save('data/npy/y_test.npy',  y_test)
+    if has_val:
+        np.save('data/npy/X_val.npy', X_val)
+        np.save('data/npy/y_val.npy', y_val)
+
+    # Summary
+    print(f"Saved: train={len(X_train)} | test={len(X_test)}"
+          + (f" | val={len(X_val)}" if has_val else ""))
+    print(f"Shapes: X_train={X_train.shape}, y_train={y_train.shape}, "
+          f"X_test={X_test.shape}, y_test={y_test.shape}"
+          + (f", X_val={X_val.shape}, y_val={y_val.shape}" if has_val else ""))
     
 # Entry point to execute the script
 if __name__ == "__main__":
