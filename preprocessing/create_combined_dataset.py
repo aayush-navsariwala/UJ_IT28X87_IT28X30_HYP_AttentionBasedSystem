@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 import sys
+
+from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.image_utils import load_and_process_image, resize_image
 
@@ -17,21 +19,24 @@ COMBINED_PATH = 'data/combined'
 IMAGE_SIZE      = (48, 48)
 TRAIN_RATIO     = 0.7
 VAL_RATIO       = 0.1
-TEST_RATIO      = 0.2         
+TEST_RATIO      = 0.2
 CLEAN_DEST      = True
 BALANCE_CLASSES = True
 MAX_PER_CLASS   = None
 SEED            = 42
+VALID_EXTS      = ('.jpg', '.jpeg', '.png')
 
-VALID_EXTS = ('.jpg', '.jpeg', '.png')
+# Preload cascade 
+CASCADE_PATH   = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+FACE_CASCADE   = cv2.CascadeClassifier(CASCADE_PATH)
+USE_FACE_CROP  = True  
 
 def ensure_clean_dir(path, clean=True):
     if clean and os.path.exists(path):
         shutil.rmtree(path)
     os.makedirs(path, exist_ok=True)
-    
+
 def collect_images_flat(folder):
-    # Return absolute file paths for images directly inside folder
     if not os.path.isdir(folder):
         return []
     return [os.path.join(folder, f)
@@ -58,7 +63,6 @@ def maybe_cap(paths, cap):
     return paths[:cap]
 
 def stratified_split_3way(paths, train_ratio, val_ratio):
-    # Deterministic split for a single class
     n = len(paths)
     n_train = int(n * train_ratio)
     n_val   = int(n * val_ratio)
@@ -67,32 +71,48 @@ def stratified_split_3way(paths, train_ratio, val_ratio):
     test  = paths[n_train + n_val:]
     return train, val, test
 
+def fast_load_gray01(path):
+    bgr = cv2.imread(path, cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise ValueError(f"Failed to read image: {path}")
+    b, g, r = cv2.split(bgr)
+    gray = 0.2989 * r + 0.5870 * g + 0.1140 * b  # matches your rgb weighting
+    gray = gray.astype(np.float32) / 255.0
+    return np.clip(gray, 0.0, 1.0)
+
 def try_face_crop_gray(gray, min_size=60):
-    g = (gray * 255.0).astype(np.uint8) if gray.max() <= 1.0 + 1e-6 else gray.astype(np.uint8)
-    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    faces = face_cascade.detectMultiScale(g, scaleFactor=1.2, minNeighbors=5, minSize=(min_size, min_size))
+    g_u8 = (gray * 255.0).astype(np.uint8) if gray.dtype != np.uint8 else gray
+    faces = FACE_CASCADE.detectMultiScale(g_u8, scaleFactor=1.2, minNeighbors=5, minSize=(min_size, min_size))
     if len(faces) == 0:
         return gray
     x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
     pad = int(0.15 * max(w, h))
-    H, W = g.shape[:2]
+    H, W = g_u8.shape[:2]
     x1 = max(0, x - pad); y1 = max(0, y - pad)
     x2 = min(W, x + w + pad); y2 = min(H, y + h + pad)
     return gray[y1:y2, x1:x2]
 
+def save_u8_gray(path, gray01):
+    u8 = (np.clip(gray01, 0.0, 1.0) * 255).astype(np.uint8)
+    ext = os.path.splitext(path)[1].lower()
+    if ext == '.png':
+        cv2.imwrite(path, u8, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+    else:
+        cv2.imwrite(path, u8, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
 def save_image(img_path, dest_folder, prefix):
     try:
-        # Load without resizing first (keeps as gray float [0,1] or properly scaled)
-        img = load_and_process_image(img_path, size=None)
-        # Face-crop (if found), then resize to model size
-        img = try_face_crop_gray(img)
+        # FAST load
+        img = fast_load_gray01(img_path)
+        # Optional face crop (to match inference/UI policy)
+        if USE_FACE_CROP:
+            img = try_face_crop_gray(img)
+        # Exact NN resize semantics (matches the training utils)
         img = resize_image(img, IMAGE_SIZE)
-        # Save as uint8 grayscale
-        img_u8 = (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
-        filename = f"{prefix}_" + os.path.basename(img_path)
+        # Construct a .png name (consistent & fast)
+        filename = f"{prefix}_" + os.path.splitext(os.path.basename(img_path))[0] + ".png"
         full_path = os.path.join(dest_folder, filename)
-        plt.imsave(full_path, img_u8, cmap='gray')
+        save_u8_gray(full_path, img)
     except Exception as e:
         print(f"Failed to save {img_path}: {e}")
 
@@ -143,19 +163,19 @@ def main():
         os.makedirs(os.path.join(COMBINED_PATH, sub), exist_ok=True)
         
     # Save the images
-    for i, p in enumerate(att_train):
+    for i, p in tqdm(list(enumerate(att_train)), desc="Save train/attentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'train/attentive'),   f'att_{i}')
-    for i, p in enumerate(inatt_train):
+    for i, p in tqdm(list(enumerate(inatt_train)), desc="Save train/inattentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'train/inattentive'), f'inatt_{i}')
 
-    for i, p in enumerate(att_val):
+    for i, p in tqdm(list(enumerate(att_val)), desc="Save val/attentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'val/attentive'),     f'att_{i}')
-    for i, p in enumerate(inatt_val):
+    for i, p in tqdm(list(enumerate(inatt_val)), desc="Save val/inattentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'val/inattentive'),   f'inatt_{i}')
 
-    for i, p in enumerate(att_test):
+    for i, p in tqdm(list(enumerate(att_test)), desc="Save test/attentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'test/attentive'),    f'att_{i}')
-    for i, p in enumerate(inatt_test):
+    for i, p in tqdm(list(enumerate(inatt_test)), desc="Save test/inattentive"):
         save_image(p, os.path.join(COMBINED_PATH, 'test/inattentive'),  f'inatt_{i}')
 
     print("✅ Combined dataset created at 'data/combined/'")   
