@@ -53,7 +53,7 @@ class SimpleCNN:
         np.random.seed(42)
         
         # Layer 1: Convolutional layer with 1 filter of size 3x3
-        conv_fan_in = 9.0
+        conv_fan_in = 3 * 3
         self.conv1_filter = (np.random.randn(3, 3).astype(np.float32)) * np.sqrt(2.0 / conv_fan_in)
         # Bias term for the convolutional output
         self.conv1_bias   = np.float32(0.0)
@@ -63,82 +63,140 @@ class SimpleCNN:
         fc_fan_in = 23 * 23
         self.fc_weights = (np.random.randn(529, 128).astype(np.float32)) * np.sqrt(2.0 / fc_fan_in)
         # Bias for the 128 neurons in the fully connected hidden layer
-        self.fc_bias    = np.zeros((1, 128), dtype=np.float32)
+        self.fc_bias = np.zeros((1, 128), dtype=np.float32)
         
         # Layer 3: Output layer with binary classification of 1 output neuron
         self.out_weights = (np.random.randn(128, 1).astype(np.float32)) * np.sqrt(1.0 / 128.0)
         # Bias for the single output neuron
         self.out_bias    = np.zeros((1, 1), dtype=np.float32)
         
+        # Caches for backward
+        self.X = None
+        self.conv_pre = None        
+        self.relu1 = None           
+        self.pool_mask = None       
+        self.pooled = None          
+        self.fc_input = None        
+        self.fc_z = None
+        self.fc_a = None
+        self.out_z = None
+        self.out_a = None
+        
+    def _conv_forward_valid_3x3(self, X):
+        H, W = X.shape
+        out = np.empty((H - 2, W - 2), dtype=np.float32)
+        for i in range(H - 2):
+            ii = i + 3
+            for j in range(W - 2):
+                jj = j + 3
+                patch = X[i:ii, j:jj]
+                out[i, j] = np.sum(self.conv1_filter * patch, dtype=np.float32) + self.conv1_bias
+        return out
+    
+    def _maxpool2x2_forward_with_mask(self, A):
+        H, W = A.shape 
+        assert H % 2 == 0 and W % 2 == 0
+        pooled = np.empty((H // 2, W // 2), dtype=np.float32)
+        mask = np.zeros_like(A, dtype=bool)
+        for i in range(0, H, 2):
+            for j in range(0, W, 2):
+                block = A[i:i+2, j:j+2]
+                m = np.max(block)
+                pooled[i // 2, j // 2] = m
+                mask_block = (block == m)
+                mask[i:i+2, j:j+2] = mask_block
+        return pooled, mask
+    
+    def _maxpool2x2_backward(self, dPooled, mask):
+        H2, W2 = dPooled.shape
+        dA = np.zeros((H2 * 2, W2 * 2), dtype=np.float32)
+        for i in range(H2):
+            for j in range(W2):
+                block_mask = mask[2*i:2*i+2, 2*j:2*j+2]
+                num_true = np.count_nonzero(block_mask)
+                if num_true == 0:
+                    continue
+                dA[2*i:2*i+2, 2*j:2*j+2] += (dPooled[i, j] / num_true) * block_mask.astype(np.float32)
+        return dA
+        
     def forward(self, X):
-        # Layer 1: Convolutional layer
-        # Convolution by applying 3x3 filter across input image (48x48)
+        # X: (48,48) float32 in [0,1]
         X = X.astype(np.float32, copy=False)
-        conv_vals = np.empty((46, 46), dtype=np.float32)
+        self.X = X
+        
+        # Conv -> ReLU
+        self.conv_pre = self._conv_forward_valid_3x3(X)     
+        self.relu1 = relu(self.conv_pre)                    
+
+        # MaxPool2x2 (stride 2) -> cache mask
+        self.pooled, self.pool_mask = self._maxpool2x2_forward_with_mask(self.relu1)  
+
+        # Flatten
+        self.fc_input = self.pooled.reshape(1, -1).astype(np.float32) 
+
+        # FC -> ReLU
+        self.fc_z = np.dot(self.fc_input, self.fc_weights) + self.fc_bias   
+        self.fc_a = relu(self.fc_z)                                        
+
+        # Output -> Sigmoid
+        self.out_z = np.dot(self.fc_a, self.out_weights) + self.out_bias    
+        self.out_a = sigmoid(self.out_z)                                    
+        return self.out_a
+
+    def backward(self, y_true, learning_rate, w_pos=1.0, w_neg=1.0):
+        # y_true -> (1,)
+        if not isinstance(y_true, np.ndarray):
+            y_true = np.array([y_true], dtype=np.float32)
+        y_true = y_true.reshape(1,).astype(np.float32)
+
+        # ----- Output layer grads -----
+        # dL/dŷ
+        dL_dy = binary_cross_entropy_derivative(y_true, self.out_a, w_pos=w_pos, w_neg=w_neg).reshape(1, 1).astype(np.float32)
+        # dŷ/dz
+        dy_dz = sigmoid_derivative(self.out_z).astype(np.float32)
+        dZ_out = dL_dy * dy_dz                                           
+
+        dW_out = np.dot(self.fc_a.T, dZ_out)                            
+        db_out = dZ_out                                                  
+
+        # ----- Backprop into FC hidden -----
+        dA_fc = np.dot(dZ_out, self.out_weights.T)                       
+        dZ_fc = dA_fc * relu_derivative(self.fc_z)                       
+
+        dW_fc = np.dot(self.fc_input.T, dZ_fc)                           
+        db_fc = dZ_fc                                                    
+
+        # ----- Backprop to pooled (flatten -> 23x23) -----
+        d_fc_input = np.dot(dZ_fc, self.fc_weights.T)                    
+        d_pooled = d_fc_input.reshape(23, 23)                          
+
+        # ----- MaxPool backward -> d_relu1 (46,46) -----
+        d_relu1 = self._maxpool2x2_backward(d_pooled, self.pool_mask)    
+
+        # ----- ReLU backward on conv_pre -----
+        d_conv_pre = d_relu1 * relu_derivative(self.conv_pre)            
+
+        # ----- Conv weight & bias grads -----
+        dW_conv = np.zeros_like(self.conv1_filter, dtype=np.float32)    
+        db_conv = np.sum(d_conv_pre).astype(np.float32)                 
+
+        # Each output location (i,j) used input patch X[i:i+3, j:j+3]
+        # Accumulate gradient: dW += patch * d_conv_pre[i,j]
         for i in range(46):
             ii = i + 3
             for j in range(46):
                 jj = j + 3
-                patch = X[i:ii, j:jj]
-                conv_vals[i, j] = np.sum(self.conv1_filter * patch, dtype=np.float32) + self.conv1_bias
-        
-        # Layer 2: ReLu activation
-        # Applying ReLu to have non-linearity
-        self.relu1 = relu(conv_vals)
-        
-        # Layer 3: Max Pooling layer
-        # With stride 2 by slicing feature map from 46x46 to 23x23 via true max pooling
-        pooled = maxpool2x2(self.relu1)  
+                patch = self.X[i:ii, j:jj]                              
+                dW_conv += (patch * d_conv_pre[i, j]).astype(np.float32)
 
-        # Layer 4: Flatten layer
-        # Flattening the pooled 2D feature map into a 1D vector
-        self.fc_input = pooled.reshape(1, -1).astype(np.float32)
-        
-        # Layer 5: Fully Connected layer
-        # Dense layer with ReLu activation (1, 529) to (1, 128)
-        self.fc_z = np.dot(self.fc_input, self.fc_weights) + self.fc_bias  
-        self.fc_a = relu(self.fc_z)  
-        
-        # Layer 6: Output layer
-        # Dense layer with sigmoid activation for binary classification (1, 128) to (1, 1)
-        self.out_z = np.dot(self.fc_a, self.out_weights) + self.out_bias  
-        self.out_a = sigmoid(self.out_z)
-        
-        # Final output with a probability value between 0 and 1
-        return self.out_a
-    
-    def backward(self, y_true, learning_rate, w_pos=1.0, w_neg=1.0):
-        # Ensure the array
-        if not isinstance(y_true, np.ndarray):
-            y_true = np.array([y_true], dtype=np.float32)
-        y_true = y_true.reshape(1,).astype(np.float32)
-        # Backpropagation through the output layer
-        # Compute the derivative of binary cross entropy loss compared to the predicted output
-        dLoss_dOut = binary_cross_entropy_derivative(y_true, self.out_a, w_pos=w_pos, w_neg=w_neg)
-        dLoss_dOut = dLoss_dOut.reshape(1, 1).astype(np.float32)
-        # Compute the derivative of sigmoid activation
-        dOut_dZ = sigmoid_derivative(self.out_z).astype(np.float32)
-        # Chain rule
-        dZ = dLoss_dOut * dOut_dZ  
-        # Compute gradients for output weights and biases
-        dW_out = np.dot(self.fc_a.T, dZ)
-        db_out = dZ
-
-        # Backpropagation through the fully connected layer
-        # Backpropagate to fully connected layer activation
-        dA_fc = np.dot(dZ, self.out_weights.T)
-        # Derivative of ReLu applied to pre-activation
-        dZ_fc = dA_fc * relu_derivative(self.fc_z)
-
-        # Gradients for fully connected weights and biases
-        dW_fc = np.dot(self.fc_input.T, dZ_fc)
-        db_fc = dZ_fc 
-
+        # ----- SGD update -----
         lr = np.float32(learning_rate)
         self.out_weights -= lr * dW_out
         self.out_bias    -= lr * db_out
         self.fc_weights  -= lr * dW_fc
         self.fc_bias     -= lr * db_fc
+        self.conv1_filter -= lr * dW_conv
+        self.conv1_bias   -= lr * db_conv
     
     def save_weights(self, path):
         # Save the model parameters to a single .npz file
@@ -174,15 +232,11 @@ class SimpleCNN:
         TP = FP = FN = TN = 0
         for i in range(len(X)):
             pred = self.predict(X[i], threshold=threshold)
-            true = int(np.asarray(y[i]).reshape(-1)[0])  # robust scalar
-            if pred == 1 and true == 1:
-                TP += 1
-            elif pred == 1 and true == 0:
-                FP += 1
-            elif pred == 0 and true == 1:
-                FN += 1
-            else:
-                TN += 1
+            true = int(np.asarray(y[i]).reshape(-1)[0])
+            if pred == 1 and true == 1:   TP += 1
+            elif pred == 1 and true == 0: FP += 1
+            elif pred == 0 and true == 1: FN += 1
+            else:                         TN += 1
         total = TP + TN + FP + FN
         
         # Compute metrics
