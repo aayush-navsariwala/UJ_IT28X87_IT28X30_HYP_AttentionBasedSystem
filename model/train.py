@@ -6,11 +6,11 @@ from cnn import SimpleCNN, binary_cross_entropy
 
 # Configuration for training
 np.random.seed(42)
-subset_size = 5000           
-learning_rate = 0.001       
+subset_size = 5000            
+learning_rate = 0.001         
 epochs = 3
 batch_size = 32
-val_ratio = 0.10
+val_ratio = 0.10              
 early_stopping_patience = 2
 weights_path = "weights/best.npz"
 log_path = "logs/training_log.csv"
@@ -30,7 +30,7 @@ def build_balanced_subset(X, y, subset_size):
     sel = np.concatenate([idx_pos[:take_pos], idx_neg[:take_neg]])
     np.random.shuffle(sel)
 
-    Xb = X[sel].astype(np.float32)
+    Xb = np.ascontiguousarray(X[sel].astype(np.float32))
     yb = y[sel].reshape(-1, 1)
     return Xb, yb
 
@@ -49,19 +49,37 @@ def stratified_split(Xb, yb, val_ratio=0.10):
     tr_sel  = np.concatenate([pos_idx[val_pos:], neg_idx[val_neg:]])
     np.random.shuffle(val_sel)
     np.random.shuffle(tr_sel)
-    return Xb[tr_sel], yb[tr_sel], Xb[val_sel], yb[val_sel]
+    return (np.ascontiguousarray(Xb[tr_sel]),
+            yb[tr_sel],
+            np.ascontiguousarray(Xb[val_sel]),
+            yb[val_sel])
 
 # Load preprocessed training data 
-X_all = np.load('data/npy/X_train.npy').astype(np.float32)
-y_all = np.load('data/npy/y_train.npy')
+X_train = np.load('data/npy/X_train.npy').astype(np.float32)
+y_train = np.load('data/npy/y_train.npy')
 
 # Guard to ensure inputs are [0,1]
-if X_all.max() > 1.5:  
-    X_all /= 255.0
+if X_train.max() > 1.5:
+    X_train /= 255.0
 
-# Create balanced subset & stratified split
-Xb, yb = build_balanced_subset(X_all, y_all, subset_size=subset_size)
-X_tr, y_tr, X_val, y_val = stratified_split(Xb, yb, val_ratio=val_ratio)
+# Try to load a true validation split from disk; fall back to in-memory split
+val_path_X = 'data/npy/X_val.npy'
+val_path_y = 'data/npy/y_val.npy'
+has_on_disk_val = os.path.exists(val_path_X) and os.path.exists(val_path_y)
+
+if has_on_disk_val:
+    X_val = np.load(val_path_X).astype(np.float32)
+    y_val = np.load(val_path_y)
+    if X_val.max() > 1.5:
+        X_val /= 255.0
+        
+    # Build the balanced subset only from the training split
+    X_tr_base, y_tr_base = X_train, y_train
+    X_tr, y_tr = build_balanced_subset(X_tr_base, y_tr_base, subset_size=subset_size)
+else:
+    # No on-disk val → build balanced subset from training pool, then internal stratified split
+    Xb, yb = build_balanced_subset(X_train, y_train, subset_size=subset_size)
+    X_tr, y_tr, X_val, y_val = stratified_split(Xb, yb, val_ratio=val_ratio)
 
 # Sanity print class counts
 print(f"Train counts -> pos:{int(np.sum(y_tr))} neg:{len(y_tr) - int(np.sum(y_tr))}")
@@ -79,57 +97,39 @@ model = SimpleCNN()
 
 # Train a single batch of images and update their weights
 def train_one_batch(batch_x, batch_y):
-    # Sum of batch losses
     batch_loss = 0.0
-    # Count of correct predictions
     correct = 0
-    
     for i in range(len(batch_x)):
-        # Ensure image shape is 48x48
         x = batch_x[i].reshape(48, 48)
-        # Extract scalar label
         y_scalar = int(np.asarray(batch_y[i]).reshape(-1)[0])
-        # Convert it to a 1D NumPy array with shape
-        y_vec = np.array([y_scalar], dtype=np.float32) 
-        
-        # Forward and backward pass
-        y_pred = model.forward(x)
-        # Calculate loss
+        y_vec = np.array([y_scalar], dtype=np.float32)
+
+        y_pred = model.forward(x)  # (1,1)
         loss = binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg)
-        # Update weights
         model.backward(y_vec, learning_rate, w_pos=w_pos, w_neg=w_neg)
-        
+
         batch_loss += float(loss)
-        
-        # Count correct predictions
         prob = float(y_pred.squeeze())
         if (prob > 0.5 and y_scalar == 1) or (prob <= 0.5 and y_scalar == 0):
             correct += 1
-    
-    # Return average loss and correct predictions
     return batch_loss / len(batch_x), correct
 
 def eval_one_epoch(Xd, yd):
-    # Evaluate loss/accuracy on a dataset without updating the weights
     total_loss = 0.0
     total_correct = 0
     for i in range(0, len(Xd), batch_size):
         end_i = min(i + batch_size, len(Xd))
         bx, by = Xd[i:end_i], yd[i:end_i]
-        
-        # Micro-batch loop for consistency with predict()
         for j in range(len(bx)):
             x = bx[j].reshape(48, 48)
             y_scalar = int(np.asarray(by[j]).reshape(-1)[0])
             y_vec = np.array([y_scalar], dtype=np.float32)
-            
+
             y_pred = model.forward(x)
             total_loss += float(binary_cross_entropy(y_vec, y_pred, w_pos=w_pos, w_neg=w_neg))
-            
             prob = float(y_pred.squeeze())
             if (prob > 0.5 and y_scalar == 1) or (prob <= 0.5 and y_scalar == 0):
                 total_correct += 1
-                
     avg_loss = total_loss / len(Xd)
     acc = total_correct / len(Xd)
     return avg_loss, acc
@@ -157,56 +157,47 @@ def find_best_threshold(Xv, yv, thresholds=np.linspace(0.05, 0.95, 37)):
 def train_model():
     os.makedirs("logs", exist_ok=True)
     os.makedirs("weights", exist_ok=True)
-    
-    # Best accuracy seen so far
+
     best_val_acc = 0.0
-    # Early stopping counter
     patience = 0
-    
-    # CSV logging
+
     with open(log_path, mode='w', newline='') as f:
         writer = csv.writer(f)
-        # Row headers
         writer.writerow(["Epoch", "TrainLoss", "TrainAccuracy", "ValLoss", "ValAcc"])
 
         for epoch in range(1, epochs + 1):
-            # Shuffle train split for each epoch
+            # Shuffle train split each epoch
             idx = np.arange(len(X_tr))
             np.random.shuffle(idx)
             Xs, ys = X_tr[idx], y_tr[idx]
-            
-            # Train epoch
+
             train_loss_sum = 0.0
             train_correct_sum = 0
-        
-            # Iterate through batces
+
             for i in tqdm(range(0, len(Xs), batch_size), desc=f"Epoch {epoch}/{epochs}"):
                 end_i = min(i + batch_size, len(Xs))
                 bx, by = Xs[i:end_i], ys[i:end_i]
                 b_loss, b_correct = train_one_batch(bx, by)
                 train_loss_sum += b_loss * len(bx)
                 train_correct_sum += b_correct
-                
+
             train_loss = train_loss_sum / len(Xs)
             train_acc  = train_correct_sum / len(Xs)
-            
-            # Validate epochs
+
             val_loss, val_acc = eval_one_epoch(X_val, y_val)
-            
+
             print(f"Epoch {epoch} — "
                   f"Train: loss {train_loss:.4f}, acc {train_acc:.4f} | "
                   f"Val: loss {val_loss:.4f}, acc {val_acc:.4f}")
-            
+
             writer.writerow([epoch, train_loss, train_acc, val_loss, val_acc])
 
-            # Early stopping logic
+            # Early stopping + checkpoint + threshold tuning on VAL
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
-                # Reset patience if improved
                 patience = 0
-                # Saving the improved trained model
                 model.save_weights(weights_path)
-                # Save decision threshold tuned on validation
+
                 best_t, best_f1 = find_best_threshold(X_val, y_val)
                 with open("weights/threshold.txt", "w") as tf:
                     tf.write(str(best_t))
