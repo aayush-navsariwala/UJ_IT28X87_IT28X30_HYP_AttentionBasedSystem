@@ -3,9 +3,10 @@ import shutil
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.image_utils import load_and_process_image
+from utils.image_utils import load_and_process_image, resize_image
 
 # Specify the paths
 FER_TRAIN_PATH = 'data/processed/train'
@@ -63,13 +64,29 @@ def stratified_split(paths, train_ratio):
 
 def save_image(img_path, dest_folder, prefix):
     try:
-        img = load_and_process_image(img_path, size=IMAGE_SIZE)
+        img = load_and_process_image(img_path, size=None)  
+        img = try_face_crop_gray(img)                     
+        img = resize_image(img, IMAGE_SIZE)                
         img_u8 = (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
         filename = f"{prefix}_" + os.path.basename(img_path)
         full_path = os.path.join(dest_folder, filename)
         plt.imsave(full_path, img_u8, cmap='gray')
     except Exception as e:
         print(f"Failed to save {img_path}: {e}")
+        
+def try_face_crop_gray(gray, min_size=60):
+    g = (gray * 255.0).astype(np.uint8) if gray.max() <= 1.0 + 1e-6 else gray.astype(np.uint8)
+    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    face_cascade = cv2.CascadeClassifier(cascade_path)
+    faces = face_cascade.detectMultiScale(g, scaleFactor=1.2, minNeighbors=5, minSize=(min_size, min_size))
+    if len(faces) == 0:
+        return gray  
+    x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+    pad = int(0.15 * max(w, h))
+    H, W = g.shape[:2]
+    x1 = max(0, x - pad); y1 = max(0, y - pad)
+    x2 = min(W, x + w + pad); y2 = min(H, y + h + pad)
+    return gray[y1:y2, x1:x2]
 
 def main():
     random.seed(SEED)
