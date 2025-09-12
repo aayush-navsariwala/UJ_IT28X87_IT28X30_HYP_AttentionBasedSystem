@@ -7,6 +7,3 @@ for split in ['train', 'test']:
     i=count(f'{base}/{split}/inattentive')
     total=a+i
     print(split, 'attentive:',a, 'inattentive:',i, 'ratio attentive:', a/max(1,total))
-    
-    
-    

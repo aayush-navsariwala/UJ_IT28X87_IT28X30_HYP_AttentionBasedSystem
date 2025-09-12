@@ -235,25 +235,6 @@ def update():
          f"| weights_loaded={weights_loaded} | logit={y_logit if y_logit is not None else 'N/A'}\n")
     )
     log_box.see(tk.END)
-    
-    # # Debug log (face flag, ROI size, validity, weights, logit)
-    # roi_h, roi_w = frame_roi.shape[:2]
-    # dbg_face = "Y" if found_face else "N"
-    # dbg_valid = "Y" if valid_lighting else "N"
-    # dbg_logit = f"{y_logit:.3f}" if y_logit is not None else "N/A"
-    # log_box.insert(
-    #     tk.END,
-    #     (f"[{now}] RAW={raw_text}, SMOOTHED={sm_text} | "
-    #      f"prob={y_prob:.3f} (thr={current_thr:.2f}) | "
-    #      f"x[min/mean/max]={x_min:.3f}/{x_mean:.3f}/{x_max:.3f} | "
-    #      f"face={dbg_face} roi={roi_w}x{roi_h} valid={dbg_valid} | "
-    #      f"weights_loaded={weights_loaded} | logit={dbg_logit}\n")
-    # )
-    # log_box.see(tk.END)
-    
-    # # Rolling average label (over plotted history window)
-    # avg = rolling_mean(history)
-    # avg_label.config(text=f"Rolling avg (last {len(history)}): {avg:.2f}")
 
     # Redraw chart
     ax.clear()
