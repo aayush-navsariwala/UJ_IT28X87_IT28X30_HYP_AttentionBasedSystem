@@ -5,12 +5,18 @@ from tqdm import tqdm
 
 # Set to 5000 for now. Need to change to None to run whole set
 MAX_SAMPLES = 5000
+
+# Trained model weights are stored
 WEIGHTS_PATH = "weights/best.npz"
+
+# Tuned threshold is stored as single float
 THRESHOLD_PATH = "weights/threshold.txt"
 
+# Divide a/b returning 0.0 if b == 0 to avoid zero division error
 def safe_div(a, b):
     return (a / b) if b != 0 else 0.0
 
+# Load a previously chosen threshold
 def load_threshold(default=0.5):
     th = default
     try:
@@ -23,52 +29,64 @@ def load_threshold(default=0.5):
         print(f"Warning: failed to read threshold file ({e}); using default {default:.2f}")
     return th
 
+# Sweep a range of thresholds to return the threshold that maximises F1 
 def sweep_thresholds(model, X, y, targets=np.linspace(0.1, 0.9, 33)):
-    # Return the threshold that maximizes F1 and its metrics
+    # Initialise the best record with an impossible low F1
     best = {"t": 0.5, "acc": 0.0, "prec": 0.0, "rec": 0.0, "f1": 0.0}
+    # Loop over candidate thresholds
     for t in targets:
         TP=FP=TN=FN=0
+        
+        # Threshold predictions at t and build confusion matrix
         for i in range(len(X)):
             pred = model.predict(X[i].reshape(48,48), threshold=t)
             true = int(y[i])
+            
             if   pred==1 and true==1: TP+=1
             elif pred==1 and true==0: FP+=1
             elif pred==0 and true==0: TN+=1
             else: FN+=1
+            
         total = TP+TN+FP+FN
         acc  = (TP+TN)/total if total else 0.0
         prec = TP/(TP+FP) if (TP+FP) else 0.0
         rec  = TP/(TP+FN) if (TP+FN) else 0.0
         f1   = (2*prec*rec)/(prec+rec) if (prec+rec) else 0.0
+        # Keep the threshold that yields the highest F1
         if f1 > best["f1"]:
             best = {"t": t, "acc": acc, "prec": prec, "rec": rec, "f1": f1}
     return best
 
 def main():
-    # 1) Load data
+    # 1) Load test data arrays from disk
     X_test = np.load('data/npy/X_test.npy').astype(np.float32)
     y_test = np.load('data/npy/y_test.npy').astype(np.int32).reshape(-1)
     
-    # Guard to ensure [0, 1]
+    # Guard to ensure [0, 1] as a safe check from preprocessing
     if X_test.max() > 1.5:
         X_test /= 255.0
 
-    # Shuffle the test set first
+    # Shuffle the test set for unbiased progress reporting
     rng = np.random.default_rng(42)
     perm = rng.permutation(len(y_test))
     X_test = X_test[perm]
     y_test = y_test[perm]
 
-    # Optional subset for speed
+    # Optional subsampling a balanced subset for faster evaluation
     if MAX_SAMPLES is not None:
         pos_idx = np.where(y_test == 1)[0]
         neg_idx = np.where(y_test == 0)[0]
-        rng.shuffle(pos_idx); rng.shuffle(neg_idx)
+        
+        rng.shuffle(pos_idx) 
+        rng.shuffle(neg_idx)
+        
         per_class = MAX_SAMPLES // 2
         take_pos = min(per_class, len(pos_idx))
         take_neg = min(per_class, len(neg_idx))
+        
         sel = np.concatenate([pos_idx[:take_pos], neg_idx[:take_neg]])
         rng.shuffle(sel)
+        
         X_test = X_test[sel]
         y_test = y_test[sel]
         
@@ -90,7 +108,7 @@ def main():
     # Load decision threshold which defaults to 0.5 if the file is missing
     threshold = load_threshold(default=0.5)
     
-    # Sweep to maximise F1 onthis evaluation set
+    # Sweep to maximise F1 on this evaluation set
     DO_SWEEP = False            
     SAVE_SWEPT_THRESHOLD = False
     if DO_SWEEP:
@@ -110,34 +128,37 @@ def main():
     prob_pos = []
     prob_neg = []
 
-    # Evaluate with a progress bar
+    # Iterate through test samples with a progress bar
     for i in tqdm(range(len(X_test)), desc="Evaluating"):
+        # Reshape samples to 48x48 grayscale for clarity
         x = X_test[i].reshape(48, 48)
         y_true = int(y_test[i])
         
         # Raw probability for diagnostics
         prob = float(model.forward(x).squeeze())
+        
+        # Store diagnostics by true class
         if y_true == 1:
             prob_pos.append(prob)
         else:
             prob_neg.append(prob)
 
-        # Threshold prediction
+        # Apply threshold for binary prediction
         y_pred = 1 if prob > threshold else 0
 
-        # Update confusion counts
+        # Update confusion matrix counts
         if y_true == 1 and y_pred == 1: TP += 1
         elif y_true == 0 and y_pred == 1: FP += 1
         elif y_true == 0 and y_pred == 0: TN += 1
         elif y_true == 1 and y_pred == 0: FN += 1
 
-    # Metrics
+    # Compute metrics from confusion matrix 
     accuracy  = safe_div(TP + TN, TP + TN + FP + FN)
     precision = safe_div(TP, TP + FP)
     recall    = safe_div(TP, TP + FN)
     f1_score  = safe_div(2 * precision * recall, precision + recall)
 
-    # Print
+    # Print report
     print("\nResults")
     print(f"Samples      : {len(X_test)}")
     print(f"Threshold    : {threshold:.3f}")
@@ -147,13 +168,13 @@ def main():
     print(f"F1 Score     : {f1_score:.4f}")
     print(f"TP={TP} FP={FP} TN={TN} FN={FN}")
     
-    # Extra diagnostics
+    # Extra diagnostics of average probabilities conditioned on true class
     if prob_pos:
         print(f"Mean prob(attentive|true=1) = {np.mean(prob_pos):.3f}")
     if prob_neg:
         print(f"Mean prob(attentive|true=0) = {np.mean(prob_neg):.3f}")
 
-    # Save log
+    # Save results to log file for later reference
     os.makedirs("logs", exist_ok=True)
     with open("logs/evaluation_log.txt", "w") as f:
         f.write(f"samples={len(X_test)}\n")
